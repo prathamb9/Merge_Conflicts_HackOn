@@ -24,7 +24,7 @@ export default function MessageBubble({ message }) {
             <div className="bg-white rounded-2xl rounded-tl-none px-4 py-3 shadow-card border border-gray-100">
               <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
             </div>
-            {(message.recommendations?.length > 0 || message.cart_optimization) && (
+            {(message.recommendations?.length > 0 || message.cart_optimization || message.amazon_departments?.length > 0) && (
               <ProductRecommendation
                 recommendations={message.recommendations}
                 total={message.total}
@@ -32,6 +32,7 @@ export default function MessageBubble({ message }) {
                 recipeMode={message.recipe_mode}
                 skippedIngredients={message.skipped_ingredients}
                 cartOptimization={message.cart_optimization}
+                amazonDepartments={message.amazon_departments}
               />
             )}
           </div>

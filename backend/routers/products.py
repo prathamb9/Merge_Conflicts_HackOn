@@ -7,8 +7,38 @@ from services.product_service import (
     get_product_by_id,
     get_categories,
 )
+from services.taxonomy_service import (
+    CATEGORY_TO_DEPARTMENT,
+    CATEGORY_DISPLAY_NAMES,
+    DEPARTMENT_ORDER,
+)
 
 router = APIRouter(prefix="/api/products", tags=["products"])
+
+
+@router.get("/departments")
+def list_departments():
+    """Return all categories grouped under Amazon department headers."""
+    categories = get_categories()
+    
+    dept_map = {}
+    for cat in categories:
+        dept = CATEGORY_TO_DEPARTMENT.get(cat, "📦 Other")
+        display = CATEGORY_DISPLAY_NAMES.get(cat, cat.replace("-", " ").title())
+        if dept not in dept_map:
+            dept_map[dept] = []
+        dept_map[dept].append({"slug": cat, "label": display})
+    
+    # Return in canonical order
+    result = []
+    for dept_name in DEPARTMENT_ORDER:
+        if dept_name in dept_map:
+            result.append({
+                "department": dept_name,
+                "categories": dept_map[dept_name],
+            })
+    
+    return {"departments": result}
 
 
 @router.get("/categories")

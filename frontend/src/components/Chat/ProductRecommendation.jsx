@@ -126,20 +126,134 @@ function ProductCard({ product }) {
   )
 }
 
-export default function ProductRecommendation({ recommendations, total, reasoning, recipeMode, skippedIngredients, cartOptimization }) {
+/** Amazon Department grouped view */
+function AmazonDepartmentView({ departments }) {
+  const { addToCart } = useCart()
+
+  if (!departments?.length) return null
+
+  return (
+    <div className="space-y-4 mt-3">
+      {departments.map((dept, di) => (
+        <div key={di} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-card">
+          {/* Department Header */}
+          <div className="px-4 py-2.5 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-800">{dept.department}</h3>
+          </div>
+
+          {/* Categories */}
+          <div className="divide-y divide-gray-50">
+            {dept.categories?.map((cat, ci) => (
+              <div key={ci} className="px-4 py-2.5">
+                {/* Sub-category label */}
+                <p className="text-xs font-bold text-green-700 mb-2 flex items-center gap-1">
+                  👉 <span className="italic">Category: {cat.name}</span>
+                </p>
+
+                {/* Items */}
+                <div className="space-y-2">
+                  {cat.items?.map((item, ii) => (
+                    <DepartmentItemRow key={item.id || ii} item={item} onAdd={addToCart} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Single item row inside a department category */
+function DepartmentItemRow({ item, onAdd }) {
+  const [added, setAdded] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const handleAdd = async () => {
+    if (loading || added) return
+    setLoading(true)
+    try {
+      await onAdd(item.id)
+      setAdded(true)
+      setTimeout(() => setAdded(false), 2200)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-colors group">
+      {/* Thumbnail */}
+      {item.image_url && (
+        <div className="w-10 h-10 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0 border border-gray-100">
+          <img
+            src={item.image_url}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-contain"
+            onError={(e) => { e.target.style.display = 'none' }}
+          />
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-gray-800 truncate">
+          {item.formatted_name || item.name || item.id}
+        </p>
+        {item.reason && (
+          <p className="text-[10px] text-gray-500 truncate mt-0.5">
+            {item.reason}
+          </p>
+        )}
+        {item.is_substitute && item.original_product && (
+          <p className="text-[10px] text-amber-600 truncate mt-0.5 flex items-center gap-0.5">
+            <RefreshCw size={8} /> Substituted for {item.original_product}
+          </p>
+        )}
+      </div>
+
+      {/* Price */}
+      <span className="text-sm font-bold text-gray-900 flex-shrink-0">₹{item.price}</span>
+
+      {/* Add button */}
+      <button
+        onClick={handleAdd}
+        disabled={loading || !item.in_stock}
+        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all btn-press flex-shrink-0 ${
+          added
+            ? 'bg-green-100 text-green-700 border border-green-200'
+            : item.in_stock !== false
+            ? 'bg-green-gradient text-white hover:opacity-90 shadow-sm'
+            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+        }`}
+      >
+        {added ? <><Check size={10} /> Added</> : loading ? '...' : <><Plus size={10} /> Add</>}
+      </button>
+    </div>
+  )
+}
+
+
+export default function ProductRecommendation({ recommendations, total, reasoning, recipeMode, skippedIngredients, cartOptimization, amazonDepartments }) {
   const { addToCart } = useCart()
   const [addingAll, setAddingAll] = useState(false)
   const [allAdded, setAllAdded] = useState(false)
 
-  if (!recommendations?.length && !cartOptimization) return null
+  const hasRecommendations = recommendations?.length > 0
+  const hasDepartments = amazonDepartments?.length > 0
 
-  const displayTotal = total ?? recommendations.reduce((s, r) => s + (r.price || 0), 0)
+  if (!hasRecommendations && !hasDepartments && !cartOptimization) return null
+
+  const displayTotal = total ?? recommendations?.reduce((s, r) => s + (r.price || 0), 0) ?? 0
 
   const handleAddAll = async () => {
     if (addingAll || allAdded) return
     setAddingAll(true)
     try {
-      for (const product of recommendations) {
+      const allItems = hasRecommendations ? recommendations : []
+      for (const product of allItems) {
         if (product.in_stock !== false) {
           await addToCart(product.id)
         }
@@ -225,8 +339,13 @@ export default function ProductRecommendation({ recommendations, total, reasonin
         </div>
       )}
 
-      {/* Horizontal scrollable cards */}
-      {recommendations?.length > 0 && (
+      {/* ── Amazon Department Grouped View ──────────────────────────── */}
+      {hasDepartments && (
+        <AmazonDepartmentView departments={amazonDepartments} />
+      )}
+
+      {/* ── Fallback: Horizontal card carousel (when no departments) ── */}
+      {!hasDepartments && hasRecommendations && (
         <div
           className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -238,15 +357,30 @@ export default function ProductRecommendation({ recommendations, total, reasonin
       )}
 
       {/* Total summary */}
-      {recommendations?.length > 0 && (
+      {(hasRecommendations || hasDepartments) && displayTotal > 0 && (
         <div className="flex items-center justify-between mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
           <div className="flex items-center gap-2 text-gray-400">
             <Package size={15} />
-            <span className="text-sm">{recommendations.length} item{recommendations.length !== 1 ? 's' : ''}</span>
+            <span className="text-sm">{recommendations?.length || 0} item{(recommendations?.length || 0) !== 1 ? 's' : ''}</span>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400 mb-0.5">Estimated Total</p>
-            <p className="text-lg font-bold gradient-text">₹{displayTotal.toFixed(0)}</p>
+          <div className="flex items-center gap-3">
+            {hasRecommendations && !recipeMode && (
+              <button
+                onClick={handleAddAll}
+                disabled={addingAll || allAdded}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all btn-press ${
+                  allAdded
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-green-gradient text-white hover:opacity-90 shadow-green'
+                }`}
+              >
+                {allAdded ? '✓ All Added!' : addingAll ? 'Adding...' : '🛒 Add All'}
+              </button>
+            )}
+            <div className="text-right">
+              <p className="text-xs text-gray-400 mb-0.5">Estimated Total</p>
+              <p className="text-lg font-bold gradient-text">₹{displayTotal.toFixed(0)}</p>
+            </div>
           </div>
         </div>
       )}

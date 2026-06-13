@@ -96,12 +96,44 @@ class CartOptimization(BaseModel):
     savings: float = 0
 
 
+# ── Amazon Department Taxonomy ────────────────────────────────────────────────
+
+class DepartmentItem(BaseModel):
+    """A single product inside a department sub-category."""
+    id: str
+    formatted_name: str
+    price: float
+    reason: str = ""
+    image_url: str = ""
+    brand: str = ""
+    unit: str = ""
+    rating: float = 4.0
+    in_stock: bool = True
+    mrp: float = 0
+    is_substitute: bool = False
+    original_product: str = ""
+
+
+class DepartmentCategory(BaseModel):
+    """A tier-2 sub-category within an Amazon department."""
+    name: str
+    items: List[DepartmentItem]
+
+
+class AmazonDepartment(BaseModel):
+    """A top-level Amazon-style browse tree department."""
+    department: str
+    categories: List[DepartmentCategory]
+
+
 class ChatResponse(BaseModel):
     message: str
     recommendations: List[RecommendedProduct]
     total: float
     reasoning: str
-    # New feature fields
+    # Amazon department-grouped view
+    amazon_departments: List[AmazonDepartment] = []
+    # Existing feature fields
     recipe_mode: bool = False
     skipped_ingredients: List[str] = []
     cart_optimization: Optional[CartOptimization] = None

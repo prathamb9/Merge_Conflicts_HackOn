@@ -8,16 +8,130 @@ from config import settings
 from services.product_service import get_catalog_summary
 from services.rag_service import query_relevant_products, query_relevant_products_with_substitution
 from services.context_service import get_contextual_triggers
+from services.taxonomy_service import (
+    group_by_departments,
+    filter_empty_departments,
+    format_product_name,
+    get_display_category,
+)
 
 client = Groq(api_key=settings.groq_api_key)
 
-SYSTEM_PROMPT = """You are QuickBot, an AI shopping assistant for a quick-commerce store (like Blinkit/Zepto/Amazon) that sells a wide variety of products: electronics, smartphones, laptops, fashion, beauty, fragrances, furniture, groceries, accessories and more.
+# ── Follow-up Intent Detection ───────────────────────────────────────────────
 
-Your job: help users find products using natural language and build an optimised shopping basket within their budget.
+FOLLOWUP_KEYWORDS = {
+    "this", "it", "that", "these", "those", "the one", "first one",
+    "second one", "last one", "above",
+    "benefit", "benefits", "durable", "durability", "quality",
+    "good", "worth", "healthy", "safe", "organic",
+    "more about", "tell me more", "details", "explain", "how",
+    "why", "compare", "difference", "versus", "vs",
+    "is it", "does it", "can it", "will it",
+    "what about", "how about", "any other",
+    "yes", "yeah", "sure", "okay", "ok", "no", "nah", "nope",
+    "thanks", "thank you", "great", "nice", "cool",
+}
 
-You will receive the user's request and a FILTERED product catalog that is already relevant to their query. Respond ONLY with valid JSON in exactly this format:
+def is_followup_message(message: str, history: List[Dict]) -> bool:
+    """
+    Heuristic classifier: detect whether the user's message is a
+    conversational follow-up (about a previously recommended product)
+    rather than a new product search.
+
+    A message is classified as follow-up if:
+      1. There is prior assistant context (at least one bot reply with recommendations), AND
+      2. The message is short (< 25 words), AND
+      3. It contains follow-up indicator words/phrases.
+    """
+    if len(history) < 2:
+        return False
+
+    # Must have at least one prior bot reply
+    has_prior_bot = any(h.get("role") == "assistant" for h in history)
+    if not has_prior_bot:
+        return False
+
+    msg_lower = message.strip().lower()
+    word_count = len(msg_lower.split())
+
+    # Short messages with follow-up keywords
+    if word_count <= 25:
+        for kw in FOLLOWUP_KEYWORDS:
+            if kw in msg_lower:
+                return True
+
+    # Questions that are clearly about "it" / "this" are follow-ups
+    if msg_lower.startswith(("is ", "does ", "can ", "will ", "how ")):
+        if word_count <= 15:
+            return True
+
+    return False
+
+
+SYSTEM_PROMPT = """You are QuickBot, the master recommendation and catalog mapping engine for a quick-commerce store (like Blinkit/Zepto/Amazon India) that sells a wide variety of products: electronics, smartphones, laptops, fashion, beauty, fragrances, furniture, groceries, accessories and more.
+
+### 1. CONVERSATIONAL MEMORY & INTENT TRACKING
+You are engaged in an ongoing, multi-turn dialogue. Always evaluate the user's latest message against the recent chat history.
+- **Follow-up Questions:** If the user asks for details, benefits, or clarification about a product you just recommended (e.g., "how will this benefit me?", "is this durable?"), answer conversationally using the context of that specific product. Do NOT generate a new list of products unless asked.
+- **New Searches:** If the user shifts intent (e.g., "Now show me party supplies"), transition smoothly to generating a new structured list based on the injected RAG context.
+
+### 2. ADVANCED RAG & ANTI-HALLUCINATION PROTOCOL
+For product recommendations, you will receive data chunks from our vector database inside the `<RETRIEVED_CATALOG_CONTEXT>` block.
+- **ABSOLUTE RULE:** You must ONLY suggest products explicitly present in that block.
+- NEVER invent, hallucinate, or guess product names, brands, or prices. If the context does not contain relevant products, politely inform the user that those items are currently unavailable.
+
+### 3. COMPREHENSIVE AMAZON DEPARTMENTS & BROWSE NODES
+Classify retrieved items using this exact top-level to tier-2 structural taxonomy:
+
+1. 📦 Grocery & Gourmet Foods
+   └── [Sub-Categories: Ready-to-Eat Meals, Cooking Pastes, Spices, Snacks, Beverages, Dairy, Fruits, Vegetables]
+2. 📦 Home & Kitchen
+   └── [Sub-Categories: Furniture, Home Décor, Kitchen Tools & Accessories]
+3. 📦 Electronics & Accessories
+   └── [Sub-Categories: Smartphones, Laptops & Notebooks, Tablets, Mobile Accessories]
+4. 📦 Clothing, Shoes & Jewelry
+   └── [Sub-Categories: Men's Shirts, Men's Shoes, Women's Dresses, Women's Bags, Women's Jewellery, Women's Shoes, Tops & T-Shirts, Sunglasses]
+5. 📦 Beauty & Personal Care
+   └── [Sub-Categories: Makeup & Beauty, Skin Care, Fragrances & Perfumes]
+6. 📦 Watches & Accessories
+   └── [Sub-Categories: Men's Watches, Women's Watches]
+7. 📦 Sports, Fitness & Outdoors
+   └── [Sub-Categories: Sports & Fitness Accessories]
+8. 📦 Automotive
+   └── [Sub-Categories: Motorcycle Accessories, Car & Vehicle Accessories]
+
+Group the valid retrieved items into their respective Amazon departments. Never display an accessory immediately next to a food item — they must be compartmentalized under their correct parent headers.
+
+### 4. ABSOLUTE SLIDER CONSTRAINT DOMINANCE
+- The numerical budget parameter is your supreme programmatic wall.
+- **Final Validation:** If any item's price in the RAG context exceeds the budget, strip it immediately from your output.
+- Erase any Parent Department or Sub-Category container if ALL of its items are over budget.
+
+### 5. AMAZON-STANDARD SPECIFICATIONS
+- Format every item using Amazon's clean syntax: `[Brand Name] + [Product Title] + ([Size/Variant])`.
+
+### 6. RESPONSE FORMAT
+When recommending products, respond ONLY with valid JSON in this format:
 {
   "message": "friendly conversational response in 1-2 sentences",
+  "amazon_departments": [
+    {
+      "department": "📦 Department Name",
+      "categories": [
+        {
+          "name": "Sub-Category Name",
+          "items": [
+            {
+              "id": "product_id from catalog",
+              "formatted_name": "[Brand] Product Title (Size/Variant)",
+              "price": 99,
+              "reason": "why this product fits the user's intent"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "recommendations": [
     {
       "id": "product_id from catalog",
@@ -34,22 +148,32 @@ You will receive the user's request and a FILTERED product catalog that is alrea
 }
 
 CRITICAL RULES:
-1. ONLY recommend products that exist in the provided catalog. NEVER invent products.
+1. ONLY recommend products that exist in the <RETRIEVED_CATALOG_CONTEXT>. NEVER invent products.
 2. ONLY recommend products with in_stock: true.
-3. STRICT BUDGET CONSTRAINT ENFORCEMENT: Treat the provided BUDGET value as a hard, non-negotiable ceiling. Immediately filter out ANY product where its individual price OR the combined total exceeds the budget. Even if a product is a perfect semantic match, if its price exceeds the budget by even 1 unit, it MUST be excluded. No exceptions.
-4. RELEVANCE & SEMANTIC FILTERING:
-   - When a user asks for a specific dish, food item, or product, DO NOT surface loosely related ingredients or generic brands unless it directly matches the intent.
-   - Prioritize: 1. Exact or highly relevant ready-to-eat meals, 2. Direct meal-kit components, 3. Highly rated direct matches.
-   - Eliminate "noise" or irrelevant cross-selling (e.g. suggesting random kitchen utensils unless explicitly asked).
-5. Match products to the user's INTENT: NEVER mix categories (e.g. fashion vs groceries) unless explicitly asked.
-6. CONTEXT & STATE PRIORITIZATION: Evaluate inputs in this exact priority:
-   1. Hard Constraints: BUDGET
-   2. Direct Intent: Specific item requested
-   3. Personalization/History: Relevant matches within budget
-7. For SUBSTITUTED products (marked is_substitute: true), mention the substitution in your message.
-8. If contextual info mentions weather/events, subtly incorporate relevant suggestions ONLY if they fit the strict budget and intent.
-9. Keep message friendly and conversational (use ₹ for currency).
-10. Respond ONLY with JSON, no markdown code blocks, no extra text."""
+3. STRICT BUDGET CONSTRAINT: Treat the BUDGET value as a hard ceiling. Filter out ANY product where its individual price exceeds the budget. The combined total must also stay within budget. No exceptions.
+4. RELEVANCE & SEMANTIC FILTERING: Match products to user INTENT. Never mix categories unless explicitly asked.
+5. For SUBSTITUTED products (marked is_substitute: true), mention the substitution in your message.
+6. If contextual info mentions weather/events, subtly incorporate relevant suggestions ONLY if they fit budget and intent.
+7. Keep message friendly and conversational (use ₹ for currency).
+8. Respond ONLY with JSON, no markdown code blocks, no extra text.
+9. The "recommendations" array must mirror all items from "amazon_departments" in a flat list for backward compatibility.
+10. For follow-up questions (about previously recommended products), respond conversationally with empty recommendations and amazon_departments arrays."""
+
+
+FOLLOWUP_SYSTEM_PROMPT = """You are QuickBot, a friendly AI shopping assistant. The user is asking a follow-up question about products you previously recommended.
+
+Answer conversationally using the context of the specific product(s) from your previous recommendations. Do NOT generate a new product list.
+
+Respond ONLY with valid JSON:
+{
+  "message": "your conversational answer about the product",
+  "recommendations": [],
+  "amazon_departments": [],
+  "total": 0,
+  "reasoning": "Answering follow-up question about previously recommended product"
+}
+
+Respond ONLY with JSON, no markdown code blocks, no extra text."""
 
 
 # Regex patterns to detect recipe intent
@@ -95,8 +219,12 @@ def get_chat_response(
     db=None,
 ) -> Dict:
     """
-    Main chat function with context-awareness, substitution, recipe detection,
-    and cart optimization.
+    Main chat function with:
+    - Conversational follow-up detection
+    - Amazon department taxonomy grouping
+    - Strict per-item + cumulative budget enforcement
+    - RAG anti-hallucination via <RETRIEVED_CATALOG_CONTEXT>
+    - Context-awareness, substitution, recipe detection, cart optimization
     """
     # Check for recipe intent first
     recipe_intent = detect_recipe_intent(message)
@@ -108,7 +236,7 @@ def get_chat_response(
             user_id=user_id,
             db=db,
         )
-    
+
     # Get active dietary filters from user profile
     filters = {}
     budget = 500
@@ -120,46 +248,65 @@ def get_chat_response(
         }
         budget = user_profile.get("budget_preference") or 500
 
-    # Scale the candidate pool with the budget — FIXED formula
+    # ── Follow-up Detection ──────────────────────────────────────────────
+    if is_followup_message(message, history):
+        return _handle_followup(message, history, budget)
+
+    # ── New Search: Full RAG Pipeline ────────────────────────────────────
+
+    # Scale the candidate pool with the budget
     target_items = max(3, min(20, budget // 100))
     candidate_limit = max(20, min(60, target_items * 4))
 
     # Retrieve semantically relevant products matching the query and filters
-    # This automatically handles out-of-stock substitutions with profile awareness
     relevant_products = query_relevant_products_with_substitution(
         query=message, 
         limit=candidate_limit, 
         filters=filters,
         user_profile=user_profile,
     )
-    
-    # Group results by category for clean LLM context
+
+    # ── Pre-LLM Budget Filtering ─────────────────────────────────────────
+    # Strip individual items that exceed the budget ceiling BEFORE sending to LLM
+    budget_filtered_products = [
+        p for p in relevant_products
+        if (p.get("price", 0) or 0) <= budget
+    ]
+    # Fallback: if everything is over budget, keep the cheapest items
+    if not budget_filtered_products and relevant_products:
+        sorted_by_price = sorted(relevant_products, key=lambda x: x.get("price", 0) or 0)
+        budget_filtered_products = sorted_by_price[:3]
+
+    # Build RAG context grouped by department for the LLM
     by_category = {}
-    for p in relevant_products:
+    for p in budget_filtered_products:
         cat = p["category"]
         if cat not in by_category:
             by_category[cat] = []
         entry = {
             "id": p["id"],
             "name": p["name"],
+            "formatted_name": format_product_name(p),
             "price": p["price"],
             "brand": p["brand"],
             "unit": p["unit"],
+            "category": cat,
+            "display_category": get_display_category(cat),
             "in_stock": p["in_stock"],
             "image_url": p["image_url"],
             "tags": p["tags"],
+            "rating": p.get("rating", 4.0),
             "is_vegetarian": p["is_vegetarian"],
             "is_vegan": p["is_vegan"],
             "is_high_protein": p["is_high_protein"],
         }
-        # Include substitution info for the LLM
         if p.get("is_substitute"):
             entry["is_substitute"] = True
             entry["original_product"] = p.get("original_product", "")
             entry["substitution_reason"] = p.get("substitution_reason", "")
         
         by_category[cat].append(entry)
-    catalog = json.dumps(by_category, ensure_ascii=False)
+    catalog_json = json.dumps(by_category, ensure_ascii=False)
 
     # Build contextual profile string
     profile_context = ""
@@ -175,8 +322,9 @@ def get_chat_response(
             prefs.append("weight-loss mode (prefer low-calorie, toned, light options)")
     pref_str = f" Dietary preferences: {', '.join(prefs)}." if prefs else ""
     profile_context = (
-        f"\n\nUSER BUDGET: ₹{budget}. The total of all recommendations MUST stay within "
+        f"\n\nReal-Time Budget Slider Ceiling: ₹{budget}. The total of all recommendations MUST stay within "
         f"₹{budget} and should use most of it (aim for 80-100% of the budget). "
+        f"Any individual item priced above ₹{budget} must be excluded. "
         f"Recommend approximately {target_items} different products (you may go slightly "
         f"over or under to best fit the budget, but never exceed the budget total)."
         f"{pref_str}"
@@ -213,7 +361,11 @@ def get_chat_response(
                     f"Suggest low-cost items to cross the threshold and save ₹{settings.delivery_charge} on delivery!"
                 )
 
-    system_text = SYSTEM_PROMPT + profile_context + f"\n\nPRODUCT CATALOG (JSON):\n{catalog}"
+    # ── Inject RAG context using the anti-hallucination block ────────────
+    rag_block = (
+        f"\n\n<RETRIEVED_CATALOG_CONTEXT>\n{catalog_json}\n</RETRIEVED_CATALOG_CONTEXT>"
+    )
+    system_text = SYSTEM_PROMPT + profile_context + rag_block
 
     # Build message history for Groq (limit to last 6 messages)
     messages = [{"role": "system", "content": system_text}]
@@ -227,9 +379,10 @@ def get_chat_response(
     # Reinforce JSON format on current turn
     user_turn = (
         f"{message}\n\n"
-        f"(Respond ONLY with a single valid JSON object in the required format with "
-        f"'message', 'recommendations', 'total', and 'reasoning' fields. Recommend about "
-        f"{target_items} products and keep the total within ₹{budget}. "
+        f"(Respond ONLY with a single valid JSON object with "
+        f"'message', 'amazon_departments', 'recommendations', 'total', and 'reasoning' fields. "
+        f"Recommend about {target_items} products, group them by Amazon departments, "
+        f"and keep the total within ₹{budget}. "
         f"Do not include any text outside the JSON.)"
     )
     messages.append({"role": "user", "content": user_turn})
@@ -260,9 +413,10 @@ def get_chat_response(
     # Ensure required fields exist
     result.setdefault("message", "Here are my recommendations for you!")
     result.setdefault("recommendations", [])
+    result.setdefault("amazon_departments", [])
     result.setdefault("reasoning", "Based on your request")
 
-    # Enrich recommendations with REAL product data from the catalog
+    # ── Enrich recommendations with REAL product data ────────────────────
     from services.product_service import get_product_by_id
 
     enriched = []
@@ -276,13 +430,16 @@ def get_chat_response(
             continue
         if not product.get("in_stock", True):
             continue
+        # Per-item budget check (defense-in-depth)
+        if budget and (product.get("price", 0) or 0) > budget:
+            continue
         seen_ids.add(pid)
         merged = dict(product)
         if rec.get("reason"):
             merged["reason"] = rec["reason"]
         
         # Carry over substitution metadata from the catalog candidates
-        for candidate in relevant_products:
+        for candidate in budget_filtered_products:
             if candidate["id"] == pid and candidate.get("is_substitute"):
                 merged["is_substitute"] = True
                 merged["original_product"] = candidate.get("original_product", "")
@@ -293,7 +450,7 @@ def get_chat_response(
 
     result["recommendations"] = enriched
 
-    # Enforce budget as hard cap
+    # ── Enforce budget as hard cap (cumulative) ──────────────────────────
     if budget and enriched:
         kept = []
         running = 0
@@ -311,9 +468,89 @@ def get_chat_response(
     else:
         result["total"] = sum(r.get("price", 0) for r in enriched)
 
+    # ── Build server-side Amazon department grouping ─────────────────────
+    # Use the enriched & budget-verified product list for accurate grouping
+    server_departments = group_by_departments(result["recommendations"], budget=budget)
+    
+    # Merge LLM-generated department data with server-side grouping
+    # Server-side grouping is authoritative (uses real product data)
+    dept_items = []
+    for dept in server_departments:
+        dept_cats = []
+        for cat in dept.get("categories", []):
+            cat_items = []
+            for item in cat.get("items", []):
+                cat_items.append({
+                    "id": item["id"],
+                    "formatted_name": format_product_name(item),
+                    "price": item.get("price", 0),
+                    "reason": item.get("reason", ""),
+                    "image_url": item.get("image_url", ""),
+                    "brand": item.get("brand", ""),
+                    "unit": item.get("unit", ""),
+                    "rating": item.get("rating", 4.0),
+                    "in_stock": item.get("in_stock", True),
+                    "mrp": item.get("mrp", 0),
+                    "is_substitute": item.get("is_substitute", False),
+                    "original_product": item.get("original_product", ""),
+                })
+            if cat_items:
+                dept_cats.append({"name": cat["name"], "items": cat_items})
+        if dept_cats:
+            dept_items.append({"department": dept["department"], "categories": dept_cats})
+    
+    result["amazon_departments"] = dept_items
+
     # Add cart optimization data to response
     if cart_opt_data:
         result["cart_optimization"] = cart_opt_data
+
+    return result
+
+
+def _handle_followup(message: str, history: List[Dict], budget: float) -> Dict:
+    """
+    Handle a follow-up question by sending only conversational context
+    to the LLM (no RAG retrieval needed).
+    """
+    messages = [{"role": "system", "content": FOLLOWUP_SYSTEM_PROMPT}]
+    
+    # Include recent history for context (last 8 messages for follow-ups)
+    filtered_history = history[-8:]
+    if filtered_history and filtered_history[0].get("role") == "assistant":
+        filtered_history = filtered_history[1:]
+    
+    for h in filtered_history:
+        messages.append({"role": h["role"], "content": h["content"]})
+    
+    messages.append({"role": "user", "content": message})
+
+    response = client.chat.completions.create(
+        model=settings.groq_model,
+        messages=messages,
+        temperature=0.5,
+        max_tokens=1024,
+    )
+
+    content = response.choices[0].message.content
+    content_str = content.strip()
+    if "```json" in content_str:
+        content_str = content_str.split("```json")[1].split("```")[0].strip()
+    elif "```" in content_str:
+        content_str = content_str.split("```")[1].split("```")[0].strip()
+
+    try:
+        result = json.loads(content_str)
+    except json.JSONDecodeError:
+        result = {
+            "message": content_str if content_str else "I'd be happy to help with that!",
+        }
+
+    result.setdefault("message", "I'd be happy to help with that!")
+    result.setdefault("recommendations", [])
+    result.setdefault("amazon_departments", [])
+    result.setdefault("total", 0)
+    result.setdefault("reasoning", "Answering follow-up question")
 
     return result
 

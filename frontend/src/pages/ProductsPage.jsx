@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Search, Plus, Check, Star, Filter, ArrowRight, Grid, LayoutList } from 'lucide-react'
+import { Search, Plus, Check, Star, Filter, ArrowRight, ChevronDown, ChevronRight } from 'lucide-react'
 import Header from '../components/Layout/Header'
 import CartSidebar from '../components/Cart/CartSidebar'
 import { productsAPI } from '../services/api'
@@ -128,8 +128,9 @@ function ProductCard({ product }) {
 
 export default function ProductsPage() {
   const [products, setProducts] = useState([])
-  const [categories, setCategories] = useState([])
+  const [departments, setDepartments] = useState([])
   const [selectedCategory, setSelectedCategory] = useState('All')
+  const [expandedDept, setExpandedDept] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -137,18 +138,27 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Fetch categories
+  // Fetch departments (grouped categories)
   useEffect(() => {
-    async function loadCategories() {
+    async function loadDepartments() {
       try {
-        const res = await productsAPI.categories()
-        setCategories(['All', ...res.data.categories])
+        const res = await productsAPI.departments()
+        setDepartments(res.data.departments || [])
       } catch (err) {
-        console.error('Error fetching categories:', err)
-        setError(`Failed to load categories: ${err.message}`)
+        console.error('Error fetching departments:', err)
+        // Fallback to flat categories
+        try {
+          const catRes = await productsAPI.categories()
+          setDepartments([{
+            department: '📦 All Categories',
+            categories: (catRes.data.categories || []).map(c => ({ slug: c, label: c.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }))
+          }])
+        } catch (e2) {
+          setError(`Failed to load categories: ${e2.message}`)
+        }
       }
     }
-    loadCategories()
+    loadDepartments()
   }, [])
 
   // Debounce search text
@@ -189,14 +199,30 @@ export default function ProductsPage() {
     loadProducts()
   }, [loadProducts])
 
-  const handleCategorySelect = (cat) => {
-    setSelectedCategory(cat)
+  const handleCategorySelect = (catSlug) => {
+    setSelectedCategory(catSlug)
     setPage(1)
+  }
+
+  const toggleDept = (deptName) => {
+    setExpandedDept(expandedDept === deptName ? null : deptName)
   }
 
   const loadMore = () => {
     setPage((prev) => prev + 1)
   }
+
+  // Count how many categories are inside the selected department
+  const getActiveDeptLabel = () => {
+    if (selectedCategory === 'All') return null
+    for (const dept of departments) {
+      for (const cat of dept.categories) {
+        if (cat.slug === selectedCategory) return dept.department
+      }
+    }
+    return null
+  }
+  const activeDept = getActiveDeptLabel()
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -210,7 +236,7 @@ export default function ProductsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black text-gray-900">Explore Catalog</h1>
-            <p className="text-gray-400 text-sm font-medium mt-1">Discover 100+ fresh items across categories</p>
+            <p className="text-gray-400 text-sm font-medium mt-1">Browse 8 departments &middot; 24 categories &middot; 190+ products</p>
           </div>
           
           <div className="relative w-full md:max-w-md bg-white border border-gray-100 rounded-2xl flex items-center px-4 py-3 input-glow shadow-sm">
@@ -226,27 +252,106 @@ export default function ProductsPage() {
           </div>
         </div>
 
-        {/* Categories Horizontal Scroll */}
-        <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {categories.map((cat) => {
-            const isActive = selectedCategory.toLowerCase() === cat.toLowerCase()
-            const emoji = CATEGORY_EMOJI[cat.toLowerCase()] || '📦'
-            return (
-              <button
-                key={cat}
-                onClick={() => handleCategorySelect(cat)}
-                className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold transition-all whitespace-nowrap btn-press border ${
-                  isActive
-                    ? 'bg-green-gradient text-white border-transparent shadow-green'
-                    : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200 shadow-sm'
-                }`}
-              >
-                <span>{emoji}</span>
-                <span>{cat}</span>
-              </button>
-            )
-          })}
+        {/* Department-Grouped Category Navigation */}
+        <div className="space-y-2">
+          {/* "All" pill */}
+          <div className="flex gap-2 flex-wrap items-center">
+            <button
+              onClick={() => { handleCategorySelect('All'); setExpandedDept(null) }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap btn-press border ${
+                selectedCategory === 'All'
+                  ? 'bg-green-gradient text-white border-transparent shadow-green'
+                  : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200 shadow-sm'
+              }`}
+            >
+              <span>🏪</span>
+              <span>All Products</span>
+            </button>
+          </div>
+
+          {/* Department Accordion */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+            {departments.map((dept) => {
+              const isExpanded = expandedDept === dept.department
+              const isDeptActive = activeDept === dept.department
+
+              return (
+                <div key={dept.department} className={`rounded-2xl border overflow-hidden transition-all ${
+                  isDeptActive ? 'border-green-300 bg-green-50/30' : 'border-gray-100 bg-white'
+                }`}>
+                  {/* Department Header */}
+                  <button
+                    onClick={() => toggleDept(dept.department)}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-left transition-all ${
+                      isExpanded
+                        ? 'bg-gradient-to-r from-green-50 to-emerald-50'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`text-xs font-bold truncate ${
+                      isDeptActive ? 'text-green-700' : 'text-gray-700'
+                    }`}>
+                      {dept.department}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-[10px] text-gray-400 font-medium">{dept.categories.length}</span>
+                      {isExpanded
+                        ? <ChevronDown size={14} className="text-gray-400" />
+                        : <ChevronRight size={14} className="text-gray-400" />
+                      }
+                    </div>
+                  </button>
+
+                  {/* Sub-categories */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 space-y-1 animate-fade-in">
+                      {dept.categories.map((cat) => {
+                        const isActive = selectedCategory === cat.slug
+                        const emoji = CATEGORY_EMOJI[cat.slug] || '📦'
+                        return (
+                          <button
+                            key={cat.slug}
+                            onClick={() => handleCategorySelect(cat.slug)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all btn-press ${
+                              isActive
+                                ? 'bg-green-gradient text-white shadow-green'
+                                : 'text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="text-sm">{emoji}</span>
+                            <span className="truncate">{cat.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
+
+        {/* Active Filter Breadcrumb */}
+        {selectedCategory !== 'All' && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+            <span className="text-gray-400">Browsing:</span>
+            {activeDept && (
+              <>
+                <span className="text-green-700 font-bold">{activeDept}</span>
+                <span className="text-gray-300">›</span>
+              </>
+            )}
+            <span className="text-gray-800 font-bold bg-green-50 px-2 py-0.5 rounded-lg border border-green-200">
+              {CATEGORY_EMOJI[selectedCategory] || '📦'} {selectedCategory.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+            </span>
+            <button
+              onClick={() => { handleCategorySelect('All'); setExpandedDept(null) }}
+              className="text-red-400 hover:text-red-600 ml-1 font-bold"
+            >
+              ✕ Clear
+            </button>
+          </div>
+        )}
 
         {/* Products Grid */}
         {error ? (

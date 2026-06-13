@@ -43,6 +43,7 @@ export const chatAPI = {
 export const productsAPI = {
   list: (params) => api.get('/products', { params }),
   categories: () => api.get('/products/categories'),
+  departments: () => api.get('/products/departments'),
   get: (id) => api.get(`/products/${id}`),
 }
 

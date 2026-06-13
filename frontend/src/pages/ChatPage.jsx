@@ -90,6 +90,7 @@ export default function ChatPage() {
         recipe_mode: res.data.recipe_mode || false,
         skipped_ingredients: res.data.skipped_ingredients || [],
         cart_optimization: res.data.cart_optimization || null,
+        amazon_departments: res.data.amazon_departments || [],
         timestamp: new Date().toISOString()
       }
       
