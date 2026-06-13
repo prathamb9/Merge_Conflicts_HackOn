@@ -3,8 +3,16 @@ import { Star, Plus, Check, Package } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
 
 const CATEGORY_EMOJI = {
-  snacks: '🍿', beverages: '🥤', dairy: '🥛', breakfast: '🍳',
-  fruits: '🍎', vegetables: '🥦', healthy: '💪', instant: '🍜', bakery: '🥖'
+  beauty: '💄', fragrances: '🌸', furniture: '🛋️', groceries: '🛒',
+  'home-decoration': '🖼️', 'kitchen-accessories': '🍴', laptops: '💻',
+  'mens-shirts': '👔', 'mens-shoes': '👞', 'mens-watches': '⌚',
+  'mobile-accessories': '🔌', motorcycle: '🏍️', 'skin-care': '🧴',
+  smartphones: '📱', 'sports-accessories': '🏀', sunglasses: '🕶️',
+  tablets: '📲', tops: '👕', vehicle: '🚗', 'womens-bags': '👜',
+  'womens-dresses': '👗', 'womens-jewellery': '💍', 'womens-shoes': '👠',
+  'womens-watches': '⌚', snacks: '🍿', beverages: '🥤', dairy: '🥛',
+  breakfast: '🍳', fruits: '🍎', vegetables: '🥦', healthy: '💪',
+  instant: '🍜', bakery: '🥖',
 }
 
 function ProductCard({ product }) {
@@ -28,21 +36,24 @@ function ProductCard({ product }) {
     ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
     : 0
 
+  const emoji = CATEGORY_EMOJI[product.category?.toLowerCase()] || '📦'
+
   return (
     <div className="flex-shrink-0 w-44 bg-white rounded-2xl shadow-card border border-gray-100 overflow-hidden card-hover shine flex flex-col">
-      {/* Image */}
-      <div className="relative h-28 bg-gradient-to-br from-green-50 to-emerald-50 overflow-hidden">
+      {/* Real product image with emoji fallback */}
+      <div className="relative h-28 bg-white overflow-hidden flex items-center justify-center">
         <img
           src={product.image_url}
           alt={product.name}
-          className="w-full h-full object-cover"
+          loading="lazy"
+          className="w-full h-full object-contain p-2"
           onError={(e) => {
             e.target.style.display = 'none'
             if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'
           }}
         />
-        <div className="hidden w-full h-full items-center justify-center text-5xl absolute inset-0 bg-gradient-to-br from-green-50 to-emerald-50">
-          {CATEGORY_EMOJI[product.category] || '📦'}
+        <div className="hidden w-full h-full items-center justify-center text-5xl absolute inset-0 bg-gradient-to-br from-gray-50 to-gray-100">
+          {emoji}
         </div>
 
         {/* Rating */}

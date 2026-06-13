@@ -6,8 +6,16 @@ import { productsAPI } from '../services/api'
 import { useCart } from '../context/CartContext'
 
 const CATEGORY_EMOJI = {
-  snacks: '🍿', beverages: '🥤', dairy: '🥛', breakfast: '🍳',
-  fruits: '🍎', vegetables: '🥦', healthy: '💪', instant: '🍜', bakery: '🥖'
+  beauty: '💄', fragrances: '🌸', furniture: '🛋️', groceries: '🛒',
+  'home-decoration': '🖼️', 'kitchen-accessories': '🍴', laptops: '💻',
+  'mens-shirts': '👔', 'mens-shoes': '👞', 'mens-watches': '⌚',
+  'mobile-accessories': '🔌', motorcycle: '🏍️', 'skin-care': '🧴',
+  smartphones: '📱', 'sports-accessories': '🏀', sunglasses: '🕶️',
+  tablets: '📲', tops: '👕', vehicle: '🚗', 'womens-bags': '👜',
+  'womens-dresses': '👗', 'womens-jewellery': '💍', 'womens-shoes': '👠',
+  'womens-watches': '⌚', snacks: '🍿', beverages: '🥤', dairy: '🥛',
+  breakfast: '🍳', fruits: '🍎', vegetables: '🥦', healthy: '💪',
+  instant: '🍜', bakery: '🥖',
 }
 
 function ProductCard({ product }) {
@@ -31,21 +39,24 @@ function ProductCard({ product }) {
     ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
     : 0
 
+  const emoji = CATEGORY_EMOJI[product.category?.toLowerCase()] || '📦'
+
   return (
     <div className="bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col group relative card-hover shine">
       {/* Product Image */}
-      <div className="relative h-44 bg-gradient-to-br from-green-50 to-emerald-50 overflow-hidden flex items-center justify-center">
+      <div className="relative h-44 bg-white overflow-hidden flex items-center justify-center">
         <img
           src={product.image_url}
           alt={product.name}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+          className="w-full h-full object-contain p-3 group-hover:scale-105 transition-transform duration-300"
           onError={(e) => {
             e.target.style.display = 'none'
             if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'
           }}
         />
-        <div className="hidden w-full h-full items-center justify-center text-7xl absolute inset-0 bg-gradient-to-br from-green-50 to-emerald-50">
-          {CATEGORY_EMOJI[product.category.toLowerCase()] || '📦'}
+        <div className="hidden w-full h-full items-center justify-center text-7xl absolute inset-0 bg-gradient-to-br from-gray-50 to-gray-100">
+          {emoji}
         </div>
 
         {/* Badges */}
@@ -124,6 +135,7 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   // Fetch categories
   useEffect(() => {
@@ -133,6 +145,7 @@ export default function ProductsPage() {
         setCategories(['All', ...res.data.categories])
       } catch (err) {
         console.error('Error fetching categories:', err)
+        setError(`Failed to load categories: ${err.message}`)
       }
     }
     loadCategories()
@@ -150,10 +163,11 @@ export default function ProductsPage() {
   // Fetch products
   const loadProducts = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await productsAPI.list({
-        category: selectedCategory,
-        search: debouncedSearch,
+        category: selectedCategory === 'All' ? null : selectedCategory,
+        search: debouncedSearch || null,
         page,
         limit: 12
       })
@@ -165,6 +179,7 @@ export default function ProductsPage() {
       setTotal(res.data.total)
     } catch (err) {
       console.error('Error loading products:', err)
+      setError(`Failed to load products: ${err.message}`)
     } finally {
       setLoading(false)
     }
@@ -234,7 +249,24 @@ export default function ProductsPage() {
         </div>
 
         {/* Products Grid */}
-        {products.length === 0 && !loading ? (
+        {error ? (
+          <div className="bg-red-50 rounded-3xl border border-red-200 p-12 text-center">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">⚠️</span>
+            </div>
+            <h3 className="text-lg font-bold text-red-700">Error Loading Products</h3>
+            <p className="text-red-600 text-sm mt-1">{error}</p>
+            <button
+              onClick={() => {
+                setError(null)
+                loadProducts()
+              }}
+              className="mt-4 px-6 py-2 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : products.length === 0 && !loading ? (
           <div className="bg-white rounded-3xl border border-gray-100 p-12 text-center shadow-sm">
             <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Search size={30} className="text-gray-300" />

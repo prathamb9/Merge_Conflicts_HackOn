@@ -55,18 +55,19 @@ export default function ChatPage() {
   }, [messages])
 
   // Send message
-  const handleSend = async (e) => {
+  const handleSend = async (e, overrideText) => {
     if (e) e.preventDefault()
-    if (!input.trim() || sending) return
+    const textToSend = (overrideText ?? input).trim()
+    if (!textToSend || sending) return
 
     const userMessage = {
       role: 'user',
-      content: input,
+      content: textToSend,
       timestamp: new Date().toISOString()
     }
 
     setMessages((prev) => [...prev, userMessage])
-    setInput('')
+    if (!overrideText) setInput('')
     setSending(true)
 
     // Prepare message history formatted for backend (role, content)
@@ -92,7 +93,9 @@ export default function ChatPage() {
     } catch (err) {
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, I encountered an issue fetching recommendations from AWS Bedrock. Please ensure you have requested model access in the AWS console.',
+        content: err.response?.data?.detail
+          ? `Sorry, something went wrong: ${err.response.data.detail}`
+          : 'Sorry, I could not reach the recommendation service. Please check that the backend is running and try again.',
         timestamp: new Date().toISOString()
       }
       setMessages((prev) => [...prev, errorMessage])
@@ -122,6 +125,14 @@ export default function ChatPage() {
       setPreferences(res.data)
       setPrefSuccess(true)
       setTimeout(() => setPrefSuccess(false), 2000)
+
+      // Instantly refresh recommendations to reflect the new budget/preferences.
+      // Reuse the user's most recent query if available, otherwise use a generic one.
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+      const regenQuery = lastUserMsg
+        ? lastUserMsg.content
+        : `Suggest items for me within my ₹${preferences.budget_preference} budget`
+      handleSend(null, regenQuery)
     } catch (err) {
       console.error('Error saving profile:', err)
     } finally {
@@ -282,16 +293,16 @@ export default function ChatPage() {
               <input
                 id="pref-budget"
                 type="range"
-                min="100"
-                max="2000"
-                step="50"
+                min="500"
+                max="200000"
+                step="500"
                 value={preferences.budget_preference}
                 onChange={(e) => setPreferences({ ...preferences, budget_preference: parseInt(e.target.value) })}
                 className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600 focus:outline-none"
               />
               <div className="flex justify-between text-[10px] text-gray-400 mt-1 font-medium">
-                <span>₹100</span>
-                <span>₹2000</span>
+                <span>₹500</span>
+                <span>₹2,00,000</span>
               </div>
             </div>
 
