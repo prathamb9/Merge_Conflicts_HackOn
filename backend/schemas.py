@@ -80,6 +80,20 @@ class RecommendedProduct(BaseModel):
     in_stock: bool = True
     rating: float = 4.0
     reason: str = ""
+    # Substitution fields
+    is_substitute: bool = False
+    original_product: str = ""
+    substitution_reason: str = ""
+
+
+class CartOptimization(BaseModel):
+    """Proactive suggestions to cross delivery/coupon thresholds."""
+    threshold_name: str = ""       # e.g. "Free Delivery" or "₹75 Off Coupon"
+    threshold_amount: float = 0
+    current_total: float = 0
+    gap: float = 0
+    suggested_products: List[RecommendedProduct] = []
+    savings: float = 0
 
 
 class ChatResponse(BaseModel):
@@ -87,6 +101,10 @@ class ChatResponse(BaseModel):
     recommendations: List[RecommendedProduct]
     total: float
     reasoning: str
+    # New feature fields
+    recipe_mode: bool = False
+    skipped_ingredients: List[str] = []
+    cart_optimization: Optional[CartOptimization] = None
 
 
 # ── Cart ──────────────────────────────────────────────────────────────────────
@@ -118,6 +136,7 @@ class ProfileUpdate(BaseModel):
     is_vegetarian: bool = False
     is_vegan: bool = False
     is_high_protein: bool = False
+    weight_loss_mode: bool = False
     budget_preference: int = 500
     favorite_categories: List[str] = []
 
@@ -126,5 +145,23 @@ class ProfileResponse(BaseModel):
     is_vegetarian: bool
     is_vegan: bool
     is_high_protein: bool
+    weight_loss_mode: bool
     budget_preference: int
     favorite_categories: List[str]
+
+
+# ── Recipe ────────────────────────────────────────────────────────────────────
+
+class RecipeRequest(BaseModel):
+    recipe: str
+    servings: int = 2
+
+
+class RecipeResponse(BaseModel):
+    recipe_name: str
+    servings: int
+    ingredients: List[str]
+    skipped_ingredients: List[str]
+    matched_products: List[RecommendedProduct]
+    total: float
+    message: str

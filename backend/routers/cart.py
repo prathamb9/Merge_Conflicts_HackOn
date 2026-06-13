@@ -118,3 +118,22 @@ def clear_cart(
     db.query(CartItem).filter(CartItem.user_id == current_user.id).delete()
     db.commit()
     return {"message": "Cart cleared"}
+
+
+@router.post("/checkout")
+def checkout(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Convert current cart into a completed order and clear the cart."""
+    from services.order_service import create_order_from_cart
+    
+    result = create_order_from_cart(current_user.id, db)
+    if not result:
+        raise HTTPException(status_code=400, detail="Cart is empty")
+    
+    return {
+        "message": "Order placed successfully! 🎉",
+        **result,
+    }
+

@@ -52,11 +52,16 @@ export const cartAPI = {
   update: (product_id, quantity) => api.put(`/cart/update/${product_id}`, { quantity }),
   remove: (product_id) => api.delete(`/cart/remove/${product_id}`),
   clear: () => api.delete('/cart/clear'),
+  checkout: () => api.post('/cart/checkout'),
 }
 
 export const profileAPI = {
   get: () => api.get('/profile'),
   update: (data) => api.put('/profile', data),
+}
+
+export const recipeAPI = {
+  parse: (recipe, servings = 2) => api.post('/recipe/parse', { recipe, servings }),
 }
 
 export default api

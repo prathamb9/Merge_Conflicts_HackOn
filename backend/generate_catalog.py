@@ -139,6 +139,43 @@ def transform(p):
     category = p.get("category", "misc")
     stock = int(p.get("stock", 0) or 0)
     is_food = category in FOOD_CATEGORIES
+    tags = p.get("tags", []) or [category]
+    tags_lower = {t.lower() for t in tags}
+    name_lower = p.get("title", "").lower()
+    desc_lower = p.get("description", "").lower()
+
+    # Detect non-vegetarian items: meat, fish, seafood, chicken, beef, etc.
+    NON_VEG_KEYWORDS = {"meat", "seafood", "chicken", "beef", "fish", "pork",
+                         "lamb", "mutton", "steak", "prawn", "shrimp", "crab"}
+    is_non_veg = bool(tags_lower & NON_VEG_KEYWORDS) or any(
+        kw in name_lower or kw in desc_lower for kw in NON_VEG_KEYWORDS
+    )
+
+    # Detect dairy items (not vegan)
+    DAIRY_KEYWORDS = {"dairy", "milk", "cheese", "butter", "cream", "yogurt",
+                       "curd", "paneer", "ghee", "eggs", "egg"}
+    has_dairy = bool(tags_lower & DAIRY_KEYWORDS) or any(
+        kw in name_lower for kw in DAIRY_KEYWORDS
+    )
+
+    # Detect high-protein items
+    PROTEIN_KEYWORDS = {"protein", "health supplements", "whey", "gym",
+                         "fitness", "eggs", "egg", "chicken", "fish", "meat",
+                         "steak", "paneer", "soy", "tofu", "lentils", "dal"}
+    is_high_protein = bool(tags_lower & PROTEIN_KEYWORDS) or any(
+        kw in name_lower or kw in desc_lower for kw in PROTEIN_KEYWORDS
+    )
+
+    # Pet food is neither vegetarian nor relevant to human dietary filters
+    is_pet_food = bool(tags_lower & {"pet supplies", "dog food", "cat food"})
+
+    if is_food and not is_pet_food:
+        is_vegetarian = not is_non_veg
+        is_vegan = not is_non_veg and not has_dairy
+    else:
+        # Non-food items (electronics, fashion, etc.) — dietary flags irrelevant
+        is_vegetarian = False
+        is_vegan = False
 
     return {
         "id": f"p{p['id']}",
@@ -152,12 +189,12 @@ def transform(p):
         "in_stock": stock > 0,
         "stock_quantity": stock,
         "image_url": p.get("thumbnail") or (p.get("images") or [""])[0],
-        "tags": p.get("tags", []) or [category],
+        "tags": tags,
         "rating": round(float(p.get("rating", 4.0) or 4.0), 1),
         "description": p.get("description", ""),
-        "is_vegetarian": True if is_food else True,
-        "is_vegan": True if is_food else False,
-        "is_high_protein": False,
+        "is_vegetarian": is_vegetarian,
+        "is_vegan": is_vegan,
+        "is_high_protein": is_high_protein,
     }
 
 

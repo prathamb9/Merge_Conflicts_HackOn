@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine
 import models
-from routers import auth, chat, products, cart, profile
+from routers import auth, chat, products, cart, profile, recipe
 
 # Create all DB tables on startup
 models.Base.metadata.create_all(bind=engine)
@@ -28,6 +28,7 @@ app.include_router(chat.router)
 app.include_router(products.router)
 app.include_router(cart.router)
 app.include_router(profile.router)
+app.include_router(recipe.router)
 
 
 @app.get("/")

@@ -40,6 +40,7 @@ class UserProfile(Base):
     is_vegetarian = Column(Boolean, default=False)
     is_vegan = Column(Boolean, default=False)
     is_high_protein = Column(Boolean, default=False)
+    weight_loss_mode = Column(Boolean, default=False)
     budget_preference = Column(Integer, default=500)
     favorite_categories = Column(Text, default="[]")
 

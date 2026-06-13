@@ -23,10 +23,13 @@ class Settings(BaseSettings):
     
     # Weather API (optional - for contextual triggers)
     weather_api_key: str = ""
+    weather_api_city: str = "Mumbai"
     
     # Business Rules
     free_delivery_threshold: float = 399.0
     delivery_charge: float = 49.0
+    coupon_threshold: float = 499.0
+    coupon_discount: float = 75.0
 
     class Config:
         env_file = env_path

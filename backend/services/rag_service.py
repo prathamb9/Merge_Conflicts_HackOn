@@ -101,13 +101,18 @@ INTENT_MAP = [
     # (trigger words, target categories, target tags)
     (["breakfast", "morning", "cereal", "oats", "egg", "eggs", "milk", "coffee", "tea", "juice", "honey", "bread", "butter"],
      ["groceries"], ["dairy", "beverages", "fruits", "coffee", "condiments", "grains"]),
-    (["snack", "snacks", "munch", "chips"], ["groceries"], ["desserts", "beverages"]),
-    (["drink", "drinks", "beverage", "beverages", "soda", "water", "thirsty"], ["groceries"], ["beverages"]),
+    (["snack", "snacks", "munch", "chips", "biscuit", "biscuits", "cookies", "namkeen"],
+     ["groceries"], ["desserts", "beverages"]),
+    (["drink", "drinks", "beverage", "beverages", "soda", "water", "thirsty", "cold drink", "cola", "pepsi", "coke"],
+     ["groceries"], ["beverages"]),
     (["fruit", "fruits"], ["groceries"], ["fruits"]),
-    (["vegetable", "vegetables", "veggie", "veggies", "veg"], ["groceries"], ["vegetables"]),
+    (["vegetable", "vegetables", "veggie", "veggies", "veg", "sabzi"], ["groceries"], ["vegetables"]),
     (["meat", "chicken", "beef", "fish", "seafood", "protein", "non-veg", "nonveg"], ["groceries"], ["meat", "seafood", "health supplements"]),
-    (["grocery", "groceries", "kitchen food", "cooking", "oil", "rice"], ["groceries"], ["cooking essentials", "grains"]),
+    (["grocery", "groceries", "kitchen food", "cooking", "oil", "rice", "atta", "flour", "dal", "spice", "spices", "masala"],
+     ["groceries"], ["cooking essentials", "grains"]),
     (["pet", "dog", "cat", "puppy", "kitten"], ["groceries"], ["pet supplies", "dog food", "cat food"]),
+    (["dessert", "sweet", "sweets", "ice cream", "chocolate", "cake"], ["groceries"], ["desserts"]),
+    (["healthy", "diet", "weight loss", "low calorie", "fitness", "salad"], ["groceries"], ["fruits", "vegetables", "health supplements"]),
     (["phone", "smartphone", "smartphones", "mobile", "iphone", "android", "cell"], ["smartphones", "mobile-accessories"], []),
     (["laptop", "laptops", "notebook", "computer", "macbook", "work setup", "workstation"], ["laptops"], []),
     (["tablet", "tablets", "ipad"], ["tablets"], []),
@@ -130,6 +135,14 @@ INTENT_MAP = [
     (["car", "vehicle", "automobile"], ["vehicle"], []),
     (["gift for her", "gift her", "her birthday", "girlfriend", "wife"], ["womens-jewellery", "womens-bags", "beauty", "fragrances", "womens-dresses"], []),
     (["gift for him", "gift him", "boyfriend", "husband"], ["mens-watches", "mens-shoes", "mens-shirts", "fragrances"], []),
+    # Recipe / cooking intent → groceries
+    (["cook", "recipe", "make", "prepare", "ingredient", "ingredients"], ["groceries"], ["cooking essentials", "vegetables", "dairy", "meat", "fruits", "condiments"]),
+    # Party / match day intent
+    (["party", "match", "ipl", "cricket", "game night", "movie night", "celebration"],
+     ["groceries"], ["beverages", "desserts"]),
+    # Chai / tea time
+    (["chai", "tea time", "pakoda", "samosa", "evening snack"],
+     ["groceries"], ["beverages", "desserts"]),
 ]
 
 STOP_WORDS = {
@@ -303,28 +316,107 @@ def query_relevant_products(
     return python_fallback_search(query, limit, filters)
 
 
-def find_substitute(out_of_stock_product: Dict, filters: Optional[Dict] = None) -> Optional[Dict]:
+def find_smart_substitute(
+    out_of_stock_product: Dict,
+    filters: Optional[Dict] = None,
+    user_profile: Optional[Dict] = None,
+) -> Optional[Dict]:
     """
     Find the best semantic substitute for an out-of-stock product.
     
-    Matches by:
-    1. Same category
-    2. Similar tags
-    3. Similar price range (±30%)
-    4. Respects dietary filters
-    """
-    products = get_products_data()
-    original_price = out_of_stock_product.get("price", 0)
-    original_category = out_of_stock_product.get("category", "")
-    original_tags = set(out_of_stock_product.get("tags", []))
+    Uses ChromaDB vector similarity when available, with profile-aware
+    filtering (e.g., weight_loss_mode shifts full-cream → toned milk).
     
+    Falls back to category/tag/price matching if ChromaDB is unavailable.
+    """
+    original_name = out_of_stock_product.get("name", "")
+    original_category = out_of_stock_product.get("category", "")
+    original_price = out_of_stock_product.get("price", 0)
+    original_tags = set(out_of_stock_product.get("tags", []))
+    original_desc = out_of_stock_product.get("description", "")
+    
+    # Build a rich semantic query for ChromaDB
+    weight_loss = user_profile.get("weight_loss_mode", False) if user_profile else False
+    
+    # Adjust search query based on user profile
+    search_query = f"{original_name} {original_category} {' '.join(original_tags)}"
+    substitution_reason = ""
+    
+    if weight_loss:
+        # Shift preferences for weight-loss users
+        WEIGHT_LOSS_SHIFTS = {
+            "full cream": ("toned", "low fat", "skimmed"),
+            "cream": ("light", "low fat"),
+            "sugar": ("sugar free", "stevia", "zero sugar"),
+            "fried": ("baked", "air fried", "grilled"),
+            "regular": ("diet", "light", "zero"),
+            "whole": ("multigrain", "oats"),
+            "ice cream": ("frozen yogurt", "sorbet"),
+        }
+        name_lower = original_name.lower()
+        desc_lower = original_desc.lower()
+        
+        for trigger, replacements in WEIGHT_LOSS_SHIFTS.items():
+            if trigger in name_lower or trigger in desc_lower:
+                search_query += " " + " ".join(replacements)
+                substitution_reason = f"Healthier alternative for weight-loss preference (shifted from '{trigger}' to '{'/'.join(replacements)}')"
+                break
+        
+        if not substitution_reason:
+            search_query += " healthy low calorie diet light"
+            substitution_reason = "Selected healthier option for weight-loss preference"
+    
+    # Try ChromaDB vector search first
+    col = get_rag_collection()
+    if col is not None:
+        try:
+            # Build ChromaDB filter: in_stock + dietary constraints
+            where_conditions = [{"in_stock": True}]
+            if filters:
+                if filters.get("is_vegetarian"):
+                    where_conditions.append({"is_vegetarian": True})
+                if filters.get("is_vegan"):
+                    where_conditions.append({"is_vegan": True})
+            
+            where = {"$and": where_conditions} if len(where_conditions) > 1 else where_conditions[0]
+            
+            results = col.query(
+                query_texts=[search_query],
+                n_results=10,
+                where=where
+            )
+            
+            if results and results["ids"] and len(results["ids"][0]) > 0:
+                from .product_service import get_product_by_id
+                
+                for pid in results["ids"][0]:
+                    if pid == out_of_stock_product["id"]:
+                        continue
+                    candidate = get_product_by_id(pid)
+                    if candidate and candidate.get("in_stock", True):
+                        # Apply dietary filters
+                        if filters:
+                            if filters.get("is_vegetarian") and not candidate.get("is_vegetarian"):
+                                continue
+                            if filters.get("is_vegan") and not candidate.get("is_vegan"):
+                                continue
+                        
+                        candidate["is_substitute"] = True
+                        candidate["original_product"] = original_name
+                        candidate["substitution_reason"] = (
+                            substitution_reason or
+                            f"Best semantic match for '{original_name}' (out of stock)"
+                        )
+                        return candidate
+        except Exception as e:
+            print(f"ChromaDB substitute search failed: {e}")
+    
+    # Fallback: Python-based scoring
+    products = get_products_data()
     candidates = []
     for p in products:
-        # Must be in stock
         if not p.get("in_stock", True):
             continue
-        
-        # Must not be the same product
         if p["id"] == out_of_stock_product["id"]:
             continue
         
@@ -337,7 +429,6 @@ def find_substitute(out_of_stock_product: Dict, filters: Optional[Dict] = None) 
             if filters.get("is_high_protein") and not p.get("is_high_protein", False):
                 continue
         
-        # Score the similarity
         score = 0.0
         
         # Same category = high priority
@@ -354,38 +445,62 @@ def find_substitute(out_of_stock_product: Dict, filters: Optional[Dict] = None) 
         if price_diff < 0.3:
             score += 10.0 * (1 - price_diff)
         
+        # Name word overlap (semantic proxy)
+        original_words = set(original_name.lower().split())
+        candidate_words = set(p["name"].lower().split())
+        name_overlap = len(original_words & candidate_words)
+        score += name_overlap * 3.0
+        
+        # Weight-loss preference: boost lower-calorie/healthier alternatives
+        if weight_loss:
+            p_name_lower = p["name"].lower()
+            for kw in ("toned", "skimmed", "low fat", "light", "diet", "zero", "sugar free", "oats", "multigrain"):
+                if kw in p_name_lower:
+                    score += 8.0
+                    break
+        
         if score > 0:
             candidates.append((p, score))
     
     if not candidates:
         return None
     
-    # Return the best match
     candidates.sort(key=lambda x: x[1], reverse=True)
-    return candidates[0][0]
+    best = dict(candidates[0][0])
+    best["is_substitute"] = True
+    best["original_product"] = original_name
+    best["substitution_reason"] = (
+        substitution_reason or
+        f"Closest match for '{original_name}' (same category, similar price)"
+    )
+    return best
 
 
 def query_relevant_products_with_substitution(
     query: str, 
     limit: int = 15,
     filters: Optional[Dict[str, Any]] = None,
+    user_profile: Optional[Dict] = None,
 ) -> List[Dict]:
     """
-    Enhanced version that automatically substitutes out-of-stock products.
+    Enhanced version that automatically substitutes out-of-stock products
+    with profile-aware semantic alternatives.
     """
     # Get initial results
     results = query_relevant_products(query, limit, filters)
     
     # Apply substitution logic
     final_results = []
+    seen_ids = set()
     for p in results:
         if not p.get("in_stock", True):
-            substitute = find_substitute(p, filters)
-            if substitute:
-                substitute["is_substitute"] = True
-                substitute["original_product"] = p["name"]
+            substitute = find_smart_substitute(p, filters, user_profile)
+            if substitute and substitute["id"] not in seen_ids:
+                seen_ids.add(substitute["id"])
                 final_results.append(substitute)
         else:
-            final_results.append(p)
+            if p["id"] not in seen_ids:
+                seen_ids.add(p["id"])
+                final_results.append(p)
     
     return final_results

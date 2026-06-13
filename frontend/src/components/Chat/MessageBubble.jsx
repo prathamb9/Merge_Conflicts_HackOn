@@ -24,11 +24,14 @@ export default function MessageBubble({ message }) {
             <div className="bg-white rounded-2xl rounded-tl-none px-4 py-3 shadow-card border border-gray-100">
               <p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
             </div>
-            {message.recommendations?.length > 0 && (
+            {(message.recommendations?.length > 0 || message.cart_optimization) && (
               <ProductRecommendation
                 recommendations={message.recommendations}
                 total={message.total}
                 reasoning={message.reasoning}
+                recipeMode={message.recipe_mode}
+                skippedIngredients={message.skipped_ingredients}
+                cartOptimization={message.cart_optimization}
               />
             )}
           </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Star, Plus, Check, Package } from 'lucide-react'
+import { Star, Plus, Check, Package, RefreshCw, ChefHat, Truck, ShoppingCart } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
 
 const CATEGORY_EMOJI = {
@@ -39,9 +39,17 @@ function ProductCard({ product }) {
   const emoji = CATEGORY_EMOJI[product.category?.toLowerCase()] || '📦'
 
   return (
-    <div className="flex-shrink-0 w-44 bg-white rounded-2xl shadow-card border border-gray-100 overflow-hidden card-hover shine flex flex-col">
+    <div className="flex-shrink-0 w-44 bg-white rounded-2xl shadow-card border border-gray-100 overflow-hidden card-hover shine flex flex-col relative">
+      {/* Substitution badge */}
+      {product.is_substitute && (
+        <div className="absolute top-0 left-0 right-0 bg-amber-500 text-white text-[9px] font-bold px-2 py-1 flex items-center gap-1 z-10">
+          <RefreshCw size={9} />
+          <span className="truncate">Substituted for {product.original_product}</span>
+        </div>
+      )}
+      
       {/* Real product image with emoji fallback */}
-      <div className="relative h-28 bg-white overflow-hidden flex items-center justify-center">
+      <div className={`relative h-28 bg-white overflow-hidden flex items-center justify-center ${product.is_substitute ? 'mt-5' : ''}`}>
         <img
           src={product.image_url}
           alt={product.name}
@@ -87,6 +95,11 @@ function ProductCard({ product }) {
         {product.reason && (
           <p className="text-xs text-green-600 mt-1 italic line-clamp-1">✓ {product.reason}</p>
         )}
+        
+        {/* Substitution reason */}
+        {product.substitution_reason && (
+          <p className="text-xs text-amber-600 mt-1 italic line-clamp-1">🔄 {product.substitution_reason}</p>
+        )}
 
         {/* Price row */}
         <div className="flex items-center gap-2 mt-2">
@@ -113,13 +126,68 @@ function ProductCard({ product }) {
   )
 }
 
-export default function ProductRecommendation({ recommendations, total, reasoning }) {
-  if (!recommendations?.length) return null
+export default function ProductRecommendation({ recommendations, total, reasoning, recipeMode, skippedIngredients, cartOptimization }) {
+  const { addToCart } = useCart()
+  const [addingAll, setAddingAll] = useState(false)
+  const [allAdded, setAllAdded] = useState(false)
+
+  if (!recommendations?.length && !cartOptimization) return null
 
   const displayTotal = total ?? recommendations.reduce((s, r) => s + (r.price || 0), 0)
 
+  const handleAddAll = async () => {
+    if (addingAll || allAdded) return
+    setAddingAll(true)
+    try {
+      for (const product of recommendations) {
+        if (product.in_stock !== false) {
+          await addToCart(product.id)
+        }
+      }
+      setAllAdded(true)
+      setTimeout(() => setAllAdded(false), 3000)
+    } finally {
+      setAddingAll(false)
+    }
+  }
+
   return (
     <div className="mt-3 animate-slide-up">
+      {/* Recipe Mode Header */}
+      {recipeMode && (
+        <div className="flex items-center gap-2 mb-3 p-3 bg-amber-50 rounded-xl border border-amber-200">
+          <span className="text-xl">🍳</span>
+          <div className="flex-1">
+            <p className="text-amber-800 text-xs font-bold">Recipe Bundle</p>
+            <p className="text-amber-600 text-[10px]">All ingredients matched from our catalog</p>
+          </div>
+          <button
+            onClick={handleAddAll}
+            disabled={addingAll || allAdded}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all btn-press ${
+              allAdded
+                ? 'bg-green-100 text-green-700'
+                : 'bg-amber-500 text-white hover:bg-amber-600 shadow-sm'
+            }`}
+          >
+            {allAdded ? '✓ All Added!' : addingAll ? 'Adding...' : '🛒 Add All to Cart'}
+          </button>
+        </div>
+      )}
+
+      {/* Skipped Ingredients */}
+      {skippedIngredients?.length > 0 && (
+        <div className="flex items-start gap-2 mb-3 p-3 bg-blue-50 rounded-xl border border-blue-100">
+          <span className="text-blue-500 mt-0.5">📋</span>
+          <div>
+            <p className="text-blue-700 text-xs font-bold">Skipped (recently purchased)</p>
+            <p className="text-blue-600 text-[10px] mt-0.5">
+              {skippedIngredients.join(', ')} — you likely have these at home
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Reasoning */}
       {reasoning && (
         <div className="flex items-start gap-2 mb-3 p-3 bg-green-50 rounded-xl border border-green-100">
@@ -128,27 +196,92 @@ export default function ProductRecommendation({ recommendations, total, reasonin
         </div>
       )}
 
+      {/* Cart Optimization Banner */}
+      {cartOptimization && cartOptimization.gap > 0 && (
+        <div className="mb-3 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Truck size={14} className="text-purple-600" />
+            <p className="text-purple-800 text-xs font-bold">
+              ₹{cartOptimization.gap.toFixed(0)} away from {cartOptimization.threshold_name}!
+            </p>
+            <span className="ml-auto text-purple-600 text-[10px] font-bold bg-purple-100 px-2 py-0.5 rounded-full">
+              Save ₹{cartOptimization.savings.toFixed(0)}
+            </span>
+          </div>
+          {/* Progress bar */}
+          <div className="w-full bg-purple-200 rounded-full h-1.5 mb-2">
+            <div
+              className="bg-purple-600 h-1.5 rounded-full transition-all"
+              style={{ width: `${Math.min(100, (cartOptimization.current_total / cartOptimization.threshold_amount) * 100)}%` }}
+            />
+          </div>
+          {cartOptimization.suggested_products?.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {cartOptimization.suggested_products.slice(0, 3).map((p, i) => (
+                <SuggestedMiniCard key={p.id || i} product={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Horizontal scrollable cards */}
-      <div
-        className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
-        {recommendations.map((product, i) => (
-          <ProductCard key={product.id || i} product={product} />
-        ))}
-      </div>
+      {recommendations?.length > 0 && (
+        <div
+          className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {recommendations.map((product, i) => (
+            <ProductCard key={product.id || i} product={product} />
+          ))}
+        </div>
+      )}
 
       {/* Total summary */}
-      <div className="flex items-center justify-between mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-        <div className="flex items-center gap-2 text-gray-400">
-          <Package size={15} />
-          <span className="text-sm">{recommendations.length} item{recommendations.length !== 1 ? 's' : ''}</span>
+      {recommendations?.length > 0 && (
+        <div className="flex items-center justify-between mt-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="flex items-center gap-2 text-gray-400">
+            <Package size={15} />
+            <span className="text-sm">{recommendations.length} item{recommendations.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400 mb-0.5">Estimated Total</p>
+            <p className="text-lg font-bold gradient-text">₹{displayTotal.toFixed(0)}</p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-xs text-gray-400 mb-0.5">Estimated Total</p>
-          <p className="text-lg font-bold gradient-text">₹{displayTotal.toFixed(0)}</p>
-        </div>
+      )}
+    </div>
+  )
+}
+
+
+/** Mini card for cart optimization suggestions */
+function SuggestedMiniCard({ product }) {
+  const { addToCart } = useCart()
+  const [added, setAdded] = useState(false)
+
+  const handleAdd = async () => {
+    if (added) return
+    await addToCart(product.id)
+    setAdded(true)
+    setTimeout(() => setAdded(false), 2000)
+  }
+
+  return (
+    <div className="flex-shrink-0 flex items-center gap-2 bg-white rounded-lg p-2 border border-purple-100 min-w-[180px]">
+      <div className="w-8 h-8 rounded-md overflow-hidden bg-gray-50 flex-shrink-0">
+        <img src={product.image_url} alt="" className="w-full h-full object-contain" onError={(e) => { e.target.style.display = 'none' }} />
       </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold text-gray-800 truncate">{product.name}</p>
+        <p className="text-[10px] text-purple-600 font-bold">₹{product.price}</p>
+      </div>
+      <button
+        onClick={handleAdd}
+        className={`p-1 rounded-md transition-all ${added ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600 hover:bg-purple-200'}`}
+      >
+        {added ? <Check size={12} /> : <Plus size={12} />}
+      </button>
     </div>
   )
 }

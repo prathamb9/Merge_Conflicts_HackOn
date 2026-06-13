@@ -27,6 +27,7 @@ def chat(
                 "is_vegetarian": profile.is_vegetarian,
                 "is_vegan": profile.is_vegan,
                 "is_high_protein": profile.is_high_protein,
+                "weight_loss_mode": profile.weight_loss_mode,
                 "budget_preference": profile.budget_preference,
             }
 
@@ -48,6 +49,7 @@ def chat(
             user_profile=user_profile,
             user_id=current_user.id,
             cart_value=cart_value,
+            db=db,
         )
         return ChatResponse(**result)
 

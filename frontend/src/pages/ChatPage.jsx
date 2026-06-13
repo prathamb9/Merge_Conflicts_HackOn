@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Zap, Trash2, ArrowRight, Settings, Sliders, ShieldCheck, Heart, Sparkles } from 'lucide-react'
+import { Send, Zap, Trash2, ArrowRight, Settings, Sliders, ShieldCheck, Heart, Sparkles, Scale } from 'lucide-react'
 import Header from '../components/Layout/Header'
 import CartSidebar from '../components/Cart/CartSidebar'
 import MessageBubble from '../components/Chat/MessageBubble'
@@ -24,6 +24,7 @@ export default function ChatPage() {
     is_vegetarian: false,
     is_vegan: false,
     is_high_protein: false,
+    weight_loss_mode: false,
     budget_preference: 500,
     favorite_categories: []
   })
@@ -86,6 +87,9 @@ export default function ChatPage() {
         recommendations: res.data.recommendations || [],
         total: res.data.total,
         reasoning: res.data.reasoning,
+        recipe_mode: res.data.recipe_mode || false,
+        skipped_ingredients: res.data.skipped_ingredients || [],
+        cart_optimization: res.data.cart_optimization || null,
         timestamp: new Date().toISOString()
       }
       
@@ -108,8 +112,10 @@ export default function ChatPage() {
   const suggestions = [
     { text: 'Movie night snacks under ₹300', emoji: '🍿' },
     { text: 'Healthy high-protein gym breakfast', emoji: '💪' },
+    { text: 'I want to cook paneer butter masala for 3 people', emoji: '🍳' },
+    { text: 'Fresh fruits and salads on budget', emoji: '🍓' },
     { text: 'Need a tea break for 3 people', emoji: '☕' },
-    { text: 'Fresh fruits and salads on budget', emoji: '🍓' }
+    { text: 'Party snacks for IPL match night', emoji: '🏏' },
   ]
 
   const handleSuggestionClick = (text) => {
@@ -231,7 +237,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 disabled={sending}
-                placeholder="Ask QuickBot for grocery recommendations..."
+                placeholder="Ask QuickBot for recommendations, or try 'cook paneer butter masala for 3'..."
                 className="flex-1 bg-transparent px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none"
               />
               <button
@@ -244,7 +250,7 @@ export default function ChatPage() {
               </button>
             </div>
             <p className="text-[10px] text-gray-400 text-center mt-2">
-              🤖 QuickBot custom-tailors recommendations using active profile filters.
+              🤖 QuickBot uses weather, time, and your profile to personalize recommendations. Try a recipe!
             </p>
           </form>
 
@@ -266,19 +272,26 @@ export default function ChatPage() {
                 {[
                   { key: 'is_vegetarian', label: '🌿 Vegetarian', desc: 'Exclude meat & fish' },
                   { key: 'is_vegan', label: '🌱 Vegan', desc: '100% plant-based items' },
-                  { key: 'is_high_protein', label: '💪 High Protein', desc: 'Focus on fitness & gym food' }
+                  { key: 'is_high_protein', label: '💪 High Protein', desc: 'Focus on fitness & gym food' },
+                  { key: 'weight_loss_mode', label: '⚖️ Weight Loss', desc: 'Prefer light, low-calorie, toned options' },
                 ].map((item) => (
                   <button
                     key={item.key}
                     onClick={() => setPreferences({ ...preferences, [item.key]: !preferences[item.key] })}
                     className={`w-full p-3 rounded-2xl border text-left transition-all ${
                       preferences[item.key]
-                        ? 'bg-green-50/70 border-green-500 text-green-800'
+                        ? item.key === 'weight_loss_mode'
+                          ? 'bg-purple-50/70 border-purple-500 text-purple-800'
+                          : 'bg-green-50/70 border-green-500 text-green-800'
                         : 'bg-white border-gray-100 hover:border-gray-200 text-gray-700'
                     }`}
                   >
                     <p className="font-semibold text-xs">{item.label}</p>
-                    <p className={`text-[10px] mt-0.5 ${preferences[item.key] ? 'text-green-600' : 'text-gray-400'}`}>{item.desc}</p>
+                    <p className={`text-[10px] mt-0.5 ${
+                      preferences[item.key]
+                        ? item.key === 'weight_loss_mode' ? 'text-purple-600' : 'text-green-600'
+                        : 'text-gray-400'
+                    }`}>{item.desc}</p>
                   </button>
                 ))}
               </div>
@@ -348,7 +361,7 @@ export default function ChatPage() {
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 flex gap-2">
               <ShieldCheck size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
               <p className="text-[10px] text-gray-400 leading-normal">
-                QuickBot stores these filters securely in SQLite. Chat recommendations are automatically constrained by saved filters.
+                QuickBot uses weather, time of day, and your dietary preferences to personalize every recommendation. Try asking to cook a recipe!
               </p>
             </div>
             
