@@ -5,6 +5,7 @@
 ## 🌟 Key Features
 
 - **🤖 AI-Powered Chat** - Natural language shopping with Groq's llama-3.3-70b
+- **🎙️ Voice Search** - Hands-free shopping using voice recognition
 - **🔄 Smart Substitution** - Automatically suggests alternatives for out-of-stock items
 - **💰 Cart Optimizer** - Proactively helps users hit free delivery thresholds
 - **🌤️ Context-Aware** - Weather, time, and event-based recommendations
@@ -99,7 +100,10 @@ npm run dev
 ### 1. AI Shopping Assistant
 Natural language chat interface powered by Groq's llama-3.3-70b model.
 
-### 2. Smart Substitution Engine
+### 2. Voice Search
+Shop hands-free with built-in voice recognition and conversational AI.
+
+### 3. Smart Substitution Engine
 Automatically finds alternatives when products are unavailable.
 
 ### 3. Cart Value Optimizer
@@ -150,7 +154,6 @@ curl http://localhost:8000/api/products?limit=5
 
 - [ ] Order placement and checkout flow
 - [ ] Price drop alerts
-- [ ] Voice shopping interface
 - [ ] Image-based recipe recognition
 - [ ] 7-day meal planner
 - [ ] Loyalty points system
