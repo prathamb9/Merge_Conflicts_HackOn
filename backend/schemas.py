@@ -71,11 +71,15 @@ class RecommendedProduct(BaseModel):
     id: str
     name: str
     price: float
+    mrp: float = 0
     category: str
+    subcategory: str = ""
     brand: str
     unit: str
     image_url: str
-    reason: str
+    in_stock: bool = True
+    rating: float = 4.0
+    reason: str = ""
 
 
 class ChatResponse(BaseModel):

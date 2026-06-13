@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 
-from ..schemas import ProductsResponse, ProductResponse
-from ..services.product_service import (
+from schemas import ProductsResponse, ProductResponse
+from services.product_service import (
     get_all_products,
     get_product_by_id,
     get_categories,

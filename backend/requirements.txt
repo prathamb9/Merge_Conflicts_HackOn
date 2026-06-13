@@ -6,8 +6,10 @@ pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
-boto3
 python-dotenv
 httpx
-psycopg2-binary
-gunicorn
+groq
+chromadb
+sentence-transformers
+requests
+python-dateutil

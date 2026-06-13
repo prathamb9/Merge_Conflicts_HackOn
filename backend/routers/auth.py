@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-from ..database import get_db
-from ..models import User, UserProfile
-from ..schemas import UserCreate, UserLogin, Token, UserResponse
-from ..config import settings
+from database import get_db
+from models import User, UserProfile
+from schemas import UserCreate, UserLogin, Token, UserResponse
+from config import settings
 
 import bcrypt
 
