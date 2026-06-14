@@ -131,8 +131,6 @@ INTENT_MAP = [
     (["decor", "decoration", "home decor", "vase", "painting"], ["home-decoration"], []),
     (["kitchen", "utensil", "utensils", "cookware", "knife", "pan"], ["kitchen-accessories"], []),
     (["sport", "sports", "fitness", "gym", "workout", "exercise", "ball", "cricket", "football"], ["sports-accessories"], []),
-    (["bike", "motorcycle", "motorbike"], ["motorcycle"], []),
-    (["car", "vehicle", "automobile"], ["vehicle"], []),
     (["gift for her", "gift her", "her birthday", "girlfriend", "wife"], ["womens-jewellery", "womens-bags", "beauty", "fragrances", "womens-dresses"], []),
     (["gift for him", "gift him", "boyfriend", "husband"], ["mens-watches", "mens-shoes", "mens-shirts", "fragrances"], []),
     # Recipe / cooking intent → groceries

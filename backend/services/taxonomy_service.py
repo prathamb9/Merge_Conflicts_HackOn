@@ -43,10 +43,6 @@ CATEGORY_TO_DEPARTMENT: Dict[str, str] = {
     # 📦 Sports, Fitness & Outdoors
     "sports-accessories": "📦 Sports, Fitness & Outdoors",
 
-    # 📦 Automotive
-    "motorcycle": "📦 Automotive",
-    "vehicle": "📦 Automotive",
-
     # 📦 Watches & Accessories
     "mens-watches": "📦 Watches & Accessories",
     "womens-watches": "📦 Watches & Accessories",
@@ -74,8 +70,6 @@ CATEGORY_DISPLAY_NAMES: Dict[str, str] = {
     "skin-care": "Skin Care",
     "fragrances": "Fragrances & Perfumes",
     "sports-accessories": "Sports & Fitness Accessories",
-    "motorcycle": "Motorcycle Accessories",
-    "vehicle": "Car & Vehicle Accessories",
     "mens-watches": "Men's Watches",
     "womens-watches": "Women's Watches",
 }
@@ -89,7 +83,6 @@ DEPARTMENT_ORDER = [
     "📦 Beauty & Personal Care",
     "📦 Watches & Accessories",
     "📦 Sports, Fitness & Outdoors",
-    "📦 Automotive",
     "📦 Other",
 ]
 

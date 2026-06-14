@@ -19,51 +19,74 @@ client = Groq(api_key=settings.groq_api_key)
 
 # ── Follow-up Intent Detection ───────────────────────────────────────────────
 
-FOLLOWUP_KEYWORDS = {
-    "this", "it", "that", "these", "those", "the one", "first one",
-    "second one", "last one", "above",
-    "benefit", "benefits", "durable", "durability", "quality",
-    "good", "worth", "healthy", "safe", "organic",
-    "more about", "tell me more", "details", "explain", "how",
-    "why", "compare", "difference", "versus", "vs",
-    "is it", "does it", "can it", "will it",
-    "what about", "how about", "any other",
-    "yes", "yeah", "sure", "okay", "ok", "no", "nah", "nope",
-    "thanks", "thank you", "great", "nice", "cool",
+# Words/phrases that strongly indicate the user wants a NEW set of products.
+# If ANY of these appear, the message is treated as a fresh product search
+# (so recommendations are shown EVERY time the user asks — never suppressed).
+NEW_SEARCH_SIGNALS = (
+    "show", "recommend", "suggest", "find", "need", "want", "give", "get me",
+    "buy", "order", "purchase", "looking for", "search", "browse", "list",
+    "more ", "another", "other", "others", "options", "option", "alternative",
+    "alternatives", "else", "different", "instead", "add ", "shopping", "shop ",
+    "some ", "any ", "few ", "cheaper", "expensive", "under ", "below ", "budget",
+)
+
+# Phrases that override the "more " signal back into follow-up territory.
+FOLLOWUP_MORE_PHRASES = ("tell me more", "more about", "know more", "learn more")
+
+# Pure acknowledgements that never need a product list.
+ACKNOWLEDGEMENTS = {
+    "yes", "yeah", "yep", "sure", "ok", "okay", "no", "nah", "nope",
+    "thanks", "thank you", "great", "nice", "cool", "good", "awesome",
+    "perfect", "got it",
 }
+
+# References to a previously shown product (a possible follow-up question).
+FOLLOWUP_REFERENCES = ("this", "that", "it", "these", "those", "them",
+                       "the one", "first one", "second one", "last one")
+
 
 def is_followup_message(message: str, history: List[Dict]) -> bool:
     """
-    Heuristic classifier: detect whether the user's message is a
-    conversational follow-up (about a previously recommended product)
-    rather than a new product search.
+    Conservative classifier: only treat a message as a conversational
+    follow-up (a question about an already-recommended product) when it is
+    clearly NOT a new product request.
 
-    A message is classified as follow-up if:
-      1. There is prior assistant context (at least one bot reply with recommendations), AND
-      2. The message is short (< 25 words), AND
-      3. It contains follow-up indicator words/phrases.
+    The bias is intentionally toward NEW searches: if there is any doubt,
+    we run the full recommendation pipeline so the user always gets fresh
+    product cards — as many times as they ask.
     """
     if len(history) < 2:
         return False
-
-    # Must have at least one prior bot reply
-    has_prior_bot = any(h.get("role") == "assistant" for h in history)
-    if not has_prior_bot:
+    if not any(h.get("role") == "assistant" for h in history):
         return False
 
-    msg_lower = message.strip().lower()
-    word_count = len(msg_lower.split())
+    msg = message.strip().lower()
+    word_count = len(msg.split())
 
-    # Short messages with follow-up keywords
-    if word_count <= 25:
-        for kw in FOLLOWUP_KEYWORDS:
-            if kw in msg_lower:
-                return True
+    # 1. Pure acknowledgement ("yes", "thanks", ...) -> follow-up (no products)
+    if msg.rstrip("!.") in ACKNOWLEDGEMENTS:
+        return True
 
-    # Questions that are clearly about "it" / "this" are follow-ups
-    if msg_lower.startswith(("is ", "does ", "can ", "will ", "how ")):
-        if word_count <= 15:
-            return True
+    # 2. Any new-search signal -> ALWAYS a fresh search (show recommendations)
+    #    ...unless it's a "tell me more about <product>" style follow-up.
+    if any(sig in msg for sig in NEW_SEARCH_SIGNALS):
+        if not any(ph in msg for ph in FOLLOWUP_MORE_PHRASES):
+            return False
+
+    # 3. Only short messages can be follow-ups
+    if word_count > 12:
+        return False
+
+    has_reference = any(ref in msg for ref in FOLLOWUP_REFERENCES)
+    is_question = msg.endswith("?") or msg.startswith(
+        ("is ", "does ", "do ", "can ", "will ", "why ", "how ", "are ",
+         "what about", "tell me more", "more about", "explain", "compare",
+         "which", "is it", "does it")
+    )
+
+    # 4. A short question that references a previous product -> follow-up
+    if has_reference and is_question:
+        return True
 
     return False
 
