@@ -119,7 +119,13 @@ def is_followup_message(message: str, history: List[Dict]) -> bool:
         if not any(ph in msg for ph in FOLLOWUP_MORE_PHRASES):
             return False
 
-    # 3. Only short messages can be follow-ups
+    # 3. Single-word / very short (≤ 2 words) messages that don't contain a
+    #    search signal are ambiguous — treat them as follow-ups so we give a
+    #    conversational reply rather than running an empty product search.
+    if word_count <= 2 and not any(sig in msg for sig in NEW_SEARCH_SIGNALS):
+        return True
+
+    # 4. Only messages up to 12 words can be follow-ups at all
     if word_count > 12:
         return False
 
@@ -267,11 +273,30 @@ def get_chat_response(
     target_items = max(3, min(12, budget // 150))
     candidate_limit = max(12, min(25, target_items * 3))
 
+    # ── Vague "more" query resolution ───────────────────────────────────
+    # "Show me more options", "more items", "give me more" etc. are too vague
+    # for the RAG retriever. Extract the topic from the last user message
+    # so we actually search for the right products.
+    VAGUE_MORE = re.compile(
+        r"^(show me more|more options|more items|more products|give me more"
+        r"|show more|any more|other options|something else)[\s.!?]*$",
+        re.IGNORECASE,
+    )
+    retrieval_query = message
+    if VAGUE_MORE.match(message.strip()):
+        # Walk backwards through history to find the last meaningful user query
+        for h in reversed(history):
+            if h.get("role") == "user":
+                prev = h["content"].strip()
+                # Skip if that was also a vague "more" request
+                if not VAGUE_MORE.match(prev) and len(prev.split()) > 1:
+                    retrieval_query = prev
+                    break
+
     # Blend the user's favourite categories into the retrieval query so the
     # preference filters genuinely steer the recommendations.
-    retrieval_query = message
     if favorite_categories:
-        retrieval_query = f"{message} {' '.join(favorite_categories)}"
+        retrieval_query = f"{retrieval_query} {' '.join(favorite_categories)}"
 
     # Retrieve semantically relevant products matching the query and filters
     relevant_products = query_relevant_products_with_substitution(
