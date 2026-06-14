@@ -128,6 +128,7 @@ export default function ChatPage() {
         cart_optimization: data.cart_optimization || null,
         amazon_departments: data.amazon_departments || [],
         order_id: data.order_id || '',
+        kit_title: data.kit_title || '',
         timestamp: new Date().toISOString()
       }
 
@@ -198,7 +199,7 @@ export default function ChatPage() {
     }
   }
 
-  // Save profile preferences
+  // Save profile preferences, then fetch fresh recommendations that REFLECT the filters
   const handleSavePreferences = async () => {
     setPrefLoading(true)
     setPrefSuccess(false)
@@ -208,12 +209,25 @@ export default function ChatPage() {
       setPrefSuccess(true)
       setTimeout(() => setPrefSuccess(false), 2000)
 
-      // Instantly refresh recommendations to reflect the new budget/preferences.
-      // Reuse the user's most recent query if available, otherwise use a generic one.
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
-      const regenQuery = lastUserMsg
-        ? lastUserMsg.content
-        : `Suggest items for me within my ₹${preferences.budget_preference} budget`
+      // Build a NEW query that reflects the chosen filters (instead of replaying
+      // the previous message). Favourite categories + dietary mode + budget drive it.
+      const favs = preferences.favorite_categories || []
+      const dietBits = []
+      if (preferences.is_vegan) dietBits.push('vegan')
+      else if (preferences.is_vegetarian) dietBits.push('vegetarian')
+      if (preferences.is_high_protein) dietBits.push('high-protein')
+      if (preferences.weight_loss_mode) dietBits.push('low-calorie')
+
+      let regenQuery
+      if (favs.length > 0) {
+        regenQuery = `Show me ${dietBits.join(' ')} ${favs.join(', ')} options within my ₹${preferences.budget_preference} budget`.replace(/\s+/g, ' ').trim()
+      } else if (dietBits.length > 0) {
+        regenQuery = `Recommend ${dietBits.join(' ')} items within my ₹${preferences.budget_preference} budget`
+      } else {
+        regenQuery = `Suggest some good items within my ₹${preferences.budget_preference} budget`
+      }
+      // Reset checkout context so this is treated as a fresh recommendation request
+      setCheckout(null)
       handleSend(null, regenQuery)
     } catch (err) {
       console.error('Error saving profile:', err)

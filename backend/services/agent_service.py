@@ -17,6 +17,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from models import User, UserProfile, CartItem, Address, PaymentMethod
+from services.bargain_service import detect_bargain_intent, negotiate
+from services.emotion_service import detect_situation, build_care_kit
 from services.product_service import get_product_by_id, get_products_by_ids
 from services import order_service
 
@@ -58,11 +60,18 @@ def build_user_profile(user: User, db: Session) -> Optional[Dict]:
     profile = db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
     if not profile:
         return None
+    import json as _json
+    try:
+        favs = _json.loads(profile.favorite_categories or "[]")
+    except Exception:
+        favs = []
     return {
         "is_vegetarian": profile.is_vegetarian,
         "is_vegan": profile.is_vegan,
         "is_high_protein": profile.is_high_protein,
+        "weight_loss_mode": profile.weight_loss_mode,
         "budget_preference": profile.budget_preference,
+        "favorite_categories": favs,
     }
 
 
@@ -152,8 +161,7 @@ def parse_address(text: str) -> Dict:
         fallback["phone"] = phone.group(1)
 
     try:
-        from services.llm_service import client
-        from config import settings
+        from services.llm_service import _chat_complete
 
         prompt = (
             "Extract a delivery address from the user's text into JSON with keys: "
@@ -161,13 +169,11 @@ def parse_address(text: str) -> Dict:
             "Use empty strings for anything not present. Respond ONLY with JSON.\n\n"
             f"Text: {text}"
         )
-        resp = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+        content = _chat_complete(
+            [{"role": "user", "content": prompt}],
             max_tokens=300,
-        )
-        content = resp.choices[0].message.content.strip()
+            temperature=0,
+        ).strip()
         if "```" in content:
             content = content.split("```")[1].replace("json", "", 1).strip()
         data = json.loads(content)
@@ -255,6 +261,7 @@ def _base_response(message: str, **kwargs) -> Dict:
         "order_id": "",
         "quick_replies": [],
         "speak": True,
+        "kit_title": "",
     }
     resp.update(kwargs)
     return resp
@@ -404,6 +411,61 @@ def handle_chat(request, user: User, db: Session) -> Dict:
     if detect_purchase_intent(message):
         return start_checkout(message, request.last_recommended_ids, user, db)
 
+    # Bargain / negotiate intent?
+    is_bargain, offered_amount = detect_bargain_intent(message)
+    if is_bargain and request.last_recommended_ids:
+        from models import Order
+        order_count = db.query(Order).filter(
+            Order.user_id == user.id, Order.status == "completed"
+        ).count()
+        # If no amount was parsed, ask the user for their offer
+        if offered_amount <= 0:
+            return _base_response(
+                "I'm open to negotiating! What price did you have in mind for these items?",
+                quick_replies=["Tell me your offer"],
+            )
+        result = negotiate(
+            product_ids=request.last_recommended_ids,
+            buyer_offer=offered_amount,
+            order_count=order_count,
+        )
+        recs = [dict(p) for p in result.get("counter_items", []) if isinstance(p, dict)]
+        resp = _base_response(
+            result["message"],
+            recommendations=recs,
+            total=result["final_price"],
+            reasoning=f"Bargain Bot | outcome={result['outcome']} | discount={result['discount_pct']}%",
+            quick_replies=(
+                [f"Accept ₹{result['final_price']:.0f}", "No thanks", "Show alternatives"]
+                if result["outcome"] in ("counter", "accept") else
+                ["Show alternatives", "Keep original price"]
+            ),
+        )
+        # If accepted, pre-stage checkout with the negotiated items
+        if result["outcome"] == "accept":
+            resp["checkout_items"] = [p["id"] for p in recs if "id" in p]
+        return resp
+
+    # Emotional / situational care-kit intent?
+    situation = detect_situation(message)
+    if situation:
+        profile = build_user_profile(user, db) or {}
+        budget = profile.get("budget_preference") or 1500
+        filters = {
+            "is_vegetarian": profile.get("is_vegetarian"),
+            "is_vegan": profile.get("is_vegan"),
+        }
+        kit = build_care_kit(situation, budget=budget, filters=filters)
+        if kit and kit.get("products"):
+            return _base_response(
+                kit["message"],
+                recommendations=[dict(p) for p in kit["products"]],
+                total=kit["total"],
+                reasoning=f"Care Kit assembled for situation: {situation}",
+                kit_title=kit["kit_title"],
+                quick_replies=["Buy the whole kit", "Show me more options"],
+            )
+
     # Default: normal recommendation flow
     from services.llm_service import get_chat_response
 
@@ -418,6 +480,7 @@ def handle_chat(request, user: User, db: Session) -> Dict:
     result.setdefault("action", "NONE")
     result["checkout"] = {"stage": "", "selected_ids": []}
     result.setdefault("order_id", "")
+    result.setdefault("kit_title", "")
     # Offer a buy quick-reply when products were recommended
     if result.get("recommendations"):
         result.setdefault("quick_replies", ["Buy all of these"])

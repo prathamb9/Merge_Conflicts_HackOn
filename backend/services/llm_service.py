@@ -15,9 +15,55 @@ from services.taxonomy_service import (
     get_display_category,
 )
 
+from groq import Groq, RateLimitError
+from typing import List, Dict, Optional
+import json
+import re
+from datetime import datetime
+
+from config import settings
+from services.product_service import get_catalog_summary
+from services.rag_service import query_relevant_products, query_relevant_products_with_substitution
+from services.context_service import get_contextual_triggers
+from services.taxonomy_service import (
+    group_by_departments,
+    filter_empty_departments,
+    format_product_name,
+    get_display_category,
+)
+
 client = Groq(api_key=settings.groq_api_key)
 
-# ── Follow-up Intent Detection ───────────────────────────────────────────────
+
+def _chat_complete(messages: list, max_tokens: int = 4096, temperature: float = 0.3) -> str:
+    """
+    Wrapper around client.chat.completions.create that automatically falls back
+    to `groq_fallback_model` when the primary model hits a rate limit (429/TPM/TPD).
+    Returns the raw content string.
+    """
+    for model in (settings.groq_model, settings.groq_fallback_model):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            err_str = str(e)
+            is_rate_limit = (
+                "429" in err_str
+                or "rate_limit" in err_str.lower()
+                or "rate limit" in err_str.lower()
+                or "tokens per" in err_str.lower()
+            )
+            if is_rate_limit and model != settings.groq_fallback_model:
+                print(f"[LLM] Rate limit on {model}, retrying with {settings.groq_fallback_model}")
+                continue
+            raise  # re-raise non-rate-limit errors or if fallback also fails
+
+
 
 # Words/phrases that strongly indicate the user wants a NEW set of products.
 # If ANY of these appear, the message is treated as a fresh product search
@@ -201,6 +247,7 @@ def get_chat_response(
     # Get active dietary filters from user profile
     filters = {}
     budget = 500
+    favorite_categories = []
     if user_profile:
         filters = {
             "is_vegetarian": user_profile.get("is_vegetarian"),
@@ -208,6 +255,7 @@ def get_chat_response(
             "is_high_protein": user_profile.get("is_high_protein")
         }
         budget = user_profile.get("budget_preference") or 500
+        favorite_categories = user_profile.get("favorite_categories") or []
 
     # ── Follow-up Detection ──────────────────────────────────────────────
     if is_followup_message(message, history):
@@ -219,10 +267,16 @@ def get_chat_response(
     target_items = max(3, min(12, budget // 150))
     candidate_limit = max(12, min(25, target_items * 3))
 
+    # Blend the user's favourite categories into the retrieval query so the
+    # preference filters genuinely steer the recommendations.
+    retrieval_query = message
+    if favorite_categories:
+        retrieval_query = f"{message} {' '.join(favorite_categories)}"
+
     # Retrieve semantically relevant products matching the query and filters
     relevant_products = query_relevant_products_with_substitution(
-        query=message, 
-        limit=candidate_limit, 
+        query=retrieval_query,
+        limit=candidate_limit,
         filters=filters,
         user_profile=user_profile,
     )
@@ -271,6 +325,8 @@ def get_chat_response(
         if user_profile.get("weight_loss_mode"):
             prefs.append("weight-loss mode (prefer low-calorie, toned, light options)")
     pref_str = f" Dietary preferences: {', '.join(prefs)}." if prefs else ""
+    if favorite_categories:
+        pref_str += f" The user especially likes these categories: {', '.join(favorite_categories)} — prioritise these when relevant."
 
     # Build user profile context for checkout state management
     profile_details = ""
@@ -342,16 +398,9 @@ def get_chat_response(
     # Minimal user turn — no verbose footer to save tokens
     messages.append({"role": "user", "content": message})
 
-    # Call Groq API
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=messages,
-        temperature=0.3,
-        max_tokens=4096,
-    )
+    # Call Groq API via wrapper (auto-retries with fallback model on rate limit)
+    content = _chat_complete(messages, max_tokens=4096, temperature=0.3)
 
-    content = response.choices[0].message.content
-    
     # Clean JSON extraction
     content_str = content.strip()
     if "```json" in content_str:
@@ -484,14 +533,7 @@ def _handle_followup(message: str, history: List[Dict], budget: float) -> Dict:
     
     messages.append({"role": "user", "content": message})
 
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=messages,
-        temperature=0.5,
-        max_tokens=1024,
-    )
-
-    content = response.choices[0].message.content
+    content = _chat_complete(messages, max_tokens=1024, temperature=0.5)
     content_str = content.strip()
     if "```json" in content_str:
         content_str = content_str.split("```json")[1].split("```")[0].strip()
@@ -538,15 +580,12 @@ Output as a JSON object with two arrays:
 
 Response:"""
 
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+    content = _chat_complete(
+        [{"role": "user", "content": prompt}],
         max_tokens=500,
-    )
+        temperature=0.2,
+    ).strip()
 
-    content = response.choices[0].message.content.strip()
-    
     # Extract JSON
     if "```" in content:
         content = content.split("```")[1].replace("json", "").strip()

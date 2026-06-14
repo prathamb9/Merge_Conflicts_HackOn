@@ -9,6 +9,8 @@ import ProductsPage from './pages/ProductsPage'
 import PaymentPage from './pages/PaymentPage'
 import AccountPage from './pages/AccountPage'
 import OrdersPage from './pages/OrdersPage'
+import MealPlannerPage from './pages/MealPlannerPage'
+import GroupCartPage from './pages/GroupCartPage'
 
 function Spinner() {
   return (
@@ -45,6 +47,9 @@ function AppRoutes() {
       <Route path="/payment/:orderId" element={<ProtectedRoute><PaymentPage /></ProtectedRoute>} />
       <Route path="/account"  element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
       <Route path="/orders"   element={<ProtectedRoute><OrdersPage /></ProtectedRoute>} />
+      <Route path="/meal-plan" element={<ProtectedRoute><MealPlannerPage /></ProtectedRoute>} />
+      <Route path="/group"     element={<ProtectedRoute><GroupCartPage /></ProtectedRoute>} />
+      <Route path="/group/:code" element={<ProtectedRoute><GroupCartPage /></ProtectedRoute>} />
       <Route path="*"         element={<Navigate to="/chat" replace />} />
     </Routes>
   )

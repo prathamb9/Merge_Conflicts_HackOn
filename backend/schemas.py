@@ -149,6 +149,7 @@ class ChatResponse(BaseModel):
     order_id: str = ""                       # set when an order is created (redirect target)
     quick_replies: List[str] = []            # suggested tappable/spoken replies
     speak: bool = True                       # whether the client should speak this message
+    kit_title: str = ""                      # emotional/situational Care Kit title
     # Amazon department-grouped view
     amazon_departments: List[AmazonDepartment] = []
     # Existing feature fields

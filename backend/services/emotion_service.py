@@ -1,0 +1,169 @@
+"""
+Emotional / Situational State Shopping
+======================================
+Detects the user's emotional or situational context (sick, stressed, celebrating,
+dieting, studying, hungover, working out…) and assembles a complete, scenario-aware
+"Care Kit" of products — something no transactional store does.
+
+Pipeline:
+  1. detect_situation(message) -> situation key (or None) via keyword/regex.
+  2. build_care_kit(situation, ...) -> picks matching in-stock products from the
+     catalog (respecting budget + dietary filters) and returns a warm, human message.
+"""
+import re
+from typing import Dict, List, Optional
+
+from services.product_service import load_products
+
+
+# Each situation maps to:
+#   - patterns: regex/keyword triggers
+#   - title:    the kit name shown to the user
+#   - emoji:    decorative
+#   - intro:    warm scenario-based message
+#   - keywords: product name/tag keywords to assemble the kit (priority order)
+SITUATIONS: Dict[str, Dict] = {
+    "sick": {
+        "patterns": [r"\b(sick|ill|fever|feverish|cold|flu|cough|sore throat|unwell|not feeling well|under the weather|throat)\b"],
+        "title": "Recovery Care Kit",
+        "emoji": "🤒",
+        "intro": "Sorry you're not feeling well! Here's a recovery kit to get you through the next 48 hours — stay hydrated and rest up. 💚",
+        "keywords": ["water", "honey", "lemon", "ginger", "tea", "juice", "soup", "kiwi", "milk", "fruit"],
+    },
+    "celebration": {
+        "patterns": [r"\b(birthday|celebrat|party|anniversary|festival|congrat|promotion|got the job|good news|housewarming)\b"],
+        "title": "Celebration Bundle",
+        "emoji": "🎉",
+        "intro": "Congratulations! 🥳 Let's make it special — here's everything you need to celebrate in style.",
+        "keywords": ["ice cream", "chocolate", "soft drink", "cookies", "popcorn", "chips", "juice", "snack", "cake", "nachos"],
+    },
+    "stressed": {
+        "patterns": [r"\b(stress|stressed|anxious|anxiety|overwhelmed|burnt out|burnout|exhausted|bad day|rough day|tense)\b"],
+        "title": "Comfort & Unwind Kit",
+        "emoji": "🫶",
+        "intro": "Take a breath — you've got this. Here's a little comfort kit to help you unwind tonight. 🍫",
+        "keywords": ["ice cream", "chocolate", "coffee", "tea", "cookies", "popcorn", "snack", "chips"],
+    },
+    "diet_craving": {
+        "patterns": [r"\b(on a diet|dieting|craving|guilt.?free|low.?cal|cheat meal|healthy snack|weight loss).{0,20}(snack|crav|sweet|treat)?", r"\bcraving\b"],
+        "title": "Guilt-Free Craving Kit",
+        "emoji": "🥗",
+        "intro": "Craving something but staying on track? These picks satisfy without the guilt. 💪",
+        "keywords": ["makhana", "granola", "protein bar", "fruit", "nuts", "roasted", "kiwi", "strawberry", "multigrain", "rice cake"],
+    },
+    "workout": {
+        "patterns": [r"\b(workout|gym|exercise|post.?workout|pre.?workout|fitness|leg day|muscle|gains|protein)\b"],
+        "title": "Fuel & Recover Kit",
+        "emoji": "💪",
+        "intro": "Beast mode! 🏋️ Here's your fuel-and-recover kit to maximise those gains.",
+        "keywords": ["protein", "eggs", "banana", "milk", "nuts", "granola", "water", "peanuts"],
+    },
+    "studying": {
+        "patterns": [r"\b(study|studying|exam|exams|assignment|late night|all.?nighter|focus|deadline|revision)\b"],
+        "title": "Study Fuel Kit",
+        "emoji": "📚",
+        "intro": "Burning the midnight oil? Here's a focus-fuel kit to keep you sharp. ☕",
+        "keywords": ["coffee", "tea", "nuts", "chocolate", "water", "makhana", "cookies", "snack"],
+    },
+    "hungover": {
+        "patterns": [r"\b(hungover|hangover|too much last night|drank too much)\b"],
+        "title": "Morning-After Kit",
+        "emoji": "🥴",
+        "intro": "Rough morning? This recovery kit will help you bounce back. Hydrate first! 💧",
+        "keywords": ["water", "juice", "eggs", "lemon", "coffee", "fruit", "milk"],
+    },
+    "lazy": {
+        "patterns": [r"\b(lazy|can't cook|cant cook|no energy to cook|tired to cook|quick meal|instant)\b"],
+        "title": "Zero-Effort Meal Kit",
+        "emoji": "😴",
+        "intro": "No energy to cook? No problem — here's a zero-effort kit for an easy meal. 🍜",
+        "keywords": ["instant", "snack", "soft drink", "ice cream", "cookies", "bread", "eggs"],
+    },
+}
+
+
+def detect_situation(message: str) -> Optional[str]:
+    msg = (message or "").lower()
+    for key, cfg in SITUATIONS.items():
+        for pat in cfg["patterns"]:
+            if re.search(pat, msg):
+                return key
+    return None
+
+
+def _pick_products(
+    keywords: List[str],
+    budget: float,
+    filters: Optional[Dict],
+    limit: int = 6,
+) -> List[Dict]:
+    """Pick in-stock catalog products whose name/tags match the kit keywords."""
+    products = load_products()
+    filters = filters or {}
+    chosen: List[Dict] = []
+    seen = set()
+
+    for kw in keywords:
+        kw_l = kw.lower()
+        # find best matching products for this keyword
+        for p in products:
+            if p["id"] in seen:
+                continue
+            if not p.get("in_stock", True):
+                continue
+            if budget and (p.get("price", 0) or 0) > budget:
+                continue
+            # dietary filters
+            if filters.get("is_vegetarian") and not p.get("is_vegetarian"):
+                continue
+            if filters.get("is_vegan") and not p.get("is_vegan"):
+                continue
+            name = p["name"].lower()
+            tags = " ".join(p.get("tags", [])).lower()
+            if kw_l in name or kw_l in tags:
+                chosen.append({**p, "kit_reason": f"For your {kw} needs"})
+                seen.add(p["id"])
+                break  # one product per keyword for variety
+        if len(chosen) >= limit:
+            break
+
+    # If we couldn't fill the kit, top up with affordable groceries
+    if len(chosen) < 3:
+        for p in products:
+            if p["id"] in seen or not p.get("in_stock", True):
+                continue
+            if p["category"] != "groceries":
+                continue
+            if budget and (p.get("price", 0) or 0) > budget:
+                continue
+            if filters.get("is_vegetarian") and not p.get("is_vegetarian"):
+                continue
+            chosen.append({**p, "kit_reason": "Recommended for you"})
+            seen.add(p["id"])
+            if len(chosen) >= 5:
+                break
+
+    return chosen[:limit]
+
+
+def build_care_kit(
+    situation: str,
+    budget: float = 1000,
+    filters: Optional[Dict] = None,
+) -> Optional[Dict]:
+    cfg = SITUATIONS.get(situation)
+    if not cfg:
+        return None
+
+    products = _pick_products(cfg["keywords"], budget, filters, limit=6)
+    if not products:
+        return None
+
+    total = sum(p.get("price", 0) for p in products)
+    return {
+        "situation": situation,
+        "kit_title": f"{cfg['emoji']} {cfg['title']}",
+        "message": cfg["intro"],
+        "products": products,
+        "total": round(total, 0),
+    }

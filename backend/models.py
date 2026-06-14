@@ -118,3 +118,49 @@ class PaymentMethod(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="payment_methods")
+
+
+# ── Group / Shared Cart (real-time consensus shopping) ────────────────────────
+
+class GroupSession(Base):
+    """A shared shopping session multiple people can join via a short code."""
+    __tablename__ = "group_sessions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String, unique=True, index=True, nullable=False)   # short share code
+    name = Column(String, default="Group Cart")
+    owner_id = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    members = relationship("GroupMember", back_populates="session", cascade="all, delete-orphan")
+    items = relationship("GroupItem", back_populates="session", cascade="all, delete-orphan")
+
+
+class GroupMember(Base):
+    """A participant in a group session (their dietary prefs feed consensus)."""
+    __tablename__ = "group_members"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey("group_sessions.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    display_name = Column(String, default="Guest")
+    is_vegetarian = Column(Boolean, default=False)
+    is_vegan = Column(Boolean, default=False)
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("GroupSession", back_populates="members")
+
+
+class GroupItem(Base):
+    """A product proposed in a group session, with vote tracking."""
+    __tablename__ = "group_items"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String, ForeignKey("group_sessions.id"), nullable=False)
+    product_id = Column(String, nullable=False)
+    product_name = Column(String, default="")
+    added_by = Column(String, default="")              # member display name
+    votes = Column(Text, default="[]")                 # JSON list of member ids who upvoted
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("GroupSession", back_populates="items")
