@@ -5,10 +5,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
-    env_file:
-      - ./backend/.env
-    environment:
-      - ENVIRONMENT=development
     volumes:
       # Persist the SQLite database across container restarts
       - quickcommerce_db:/app/data_volume
