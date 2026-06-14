@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
-import { Star, Plus, Check, Package, RefreshCw, ChefHat, Truck, ShoppingCart } from 'lucide-react'
+import { Star, Plus, Check, Package, RefreshCw, ChefHat, Truck, ShoppingCart, Scale } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
+import BargainModal from './BargainModal'
+import PairingCluster from './PairingCluster'
 
 const CATEGORY_EMOJI = {
   beauty: '💄', fragrances: '🌸', furniture: '🛋️', groceries: '🛒',
@@ -250,6 +252,7 @@ export default function ProductRecommendation({ recommendations, total, reasonin
   const { addToCart } = useCart()
   const [addingAll, setAddingAll] = useState(false)
   const [allAdded, setAllAdded] = useState(false)
+  const [showBargain, setShowBargain] = useState(false)
 
   const hasRecommendations = recommendations?.length > 0
   const hasDepartments = amazonDepartments?.length > 0
@@ -387,12 +390,38 @@ export default function ProductRecommendation({ recommendations, total, reasonin
                 {allAdded ? '✓ All Added!' : addingAll ? 'Adding...' : '🛒 Add All'}
               </button>
             )}
+            {/* Bargain Bot trigger */}
+            {hasRecommendations && !recipeMode && displayTotal > 0 && (
+              <button
+                onClick={() => setShowBargain(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-700 hover:bg-amber-200 transition-all btn-press flex items-center gap-1"
+              >
+                <Scale size={12} /> Bargain
+              </button>
+            )}
             <div className="text-right">
               <p className="text-xs text-gray-400 mb-0.5">Estimated Total</p>
               <p className="text-lg font-bold gradient-text">₹{displayTotal.toFixed(0)}</p>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Perfect Pairing cluster */}
+      {hasRecommendations && !recipeMode && (
+        <PairingCluster
+          productIds={recommendations.map((r) => r.id)}
+        />
+      )}
+
+      {/* Bargain Bot modal */}
+      {showBargain && hasRecommendations && (
+        <BargainModal
+          productIds={recommendations.map((r) => r.id)}
+          productNames={recommendations.map((r) => r.name).join(', ')}
+          listTotal={displayTotal}
+          onClose={() => setShowBargain(false)}
+        />
       )}
     </div>
   )

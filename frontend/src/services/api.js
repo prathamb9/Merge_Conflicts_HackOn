@@ -93,4 +93,31 @@ export const ordersAPI = {
     api.post(`/orders/${id}/pay`, { payment_method_id: paymentMethodId }),
 }
 
+export const bargainAPI = {
+  haggle: (productIds, offer) =>
+    api.post('/bargain', { product_ids: productIds, offer }),
+}
+
+export const pairingAPI = {
+  get: (productIds, filters = {}) =>
+    api.post('/pairing', { product_ids: productIds, ...filters }),
+}
+
+export const mealPlanAPI = {
+  generate: (goal, days = 7, servings = 2) =>
+    api.post('/meal-plan', { goal, days, servings }),
+  consolidate: (ingredients, servings = 2) =>
+    api.post('/meal-plan/consolidate', { ingredients, servings }),
+}
+
+export const groupAPI = {
+  create: (name) => api.post('/group/create', { name }),
+  join: (code) => api.post(`/group/${code}/join`),
+  get: (code) => api.get(`/group/${code}`),
+  addItem: (code, productId) => api.post(`/group/${code}/items`, { product_id: productId }),
+  vote: (code, itemId) => api.post(`/group/${code}/items/${itemId}/vote`),
+  removeItem: (code, itemId) => api.delete(`/group/${code}/items/${itemId}`),
+  checkoutToCart: (code) => api.post(`/group/${code}/checkout-to-cart`),
+}
+
 export default api

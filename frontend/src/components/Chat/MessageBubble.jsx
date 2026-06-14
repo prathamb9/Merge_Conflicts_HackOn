@@ -60,6 +60,17 @@ export default function MessageBubble({ message, onBuyNow }) {
               </div>
             )}
 
+            {/* Emotional / situational Care Kit banner */}
+            {message.kit_title && (
+              <div className="mt-2 flex items-center gap-2 p-3 bg-gradient-to-r from-rose-50 to-pink-50 rounded-xl border border-rose-200 animate-fade-in">
+                <span className="text-xl">🧺</span>
+                <div className="flex-1">
+                  <p className="text-rose-800 text-xs font-bold">{message.kit_title}</p>
+                  <p className="text-rose-500 text-[10px] mt-0.5">A complete kit curated for your moment</p>
+                </div>
+              </div>
+            )}
+
             {(message.recommendations?.length > 0 || message.cart_optimization || message.amazon_departments?.length > 0) && (
               <ProductRecommendation
                 recommendations={message.recommendations}
