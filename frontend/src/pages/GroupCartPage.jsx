@@ -294,7 +294,7 @@ function GroupRoom({ code }) {
 export default function GroupCartPage() {
   const { code } = useParams()
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header />
       <div className="px-4 py-8">
         {code ? <GroupRoom code={code} /> : <GroupLanding />}

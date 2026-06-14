@@ -247,7 +247,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <Header />
       <CartSidebar />
 
@@ -255,7 +255,7 @@ export default function ChatPage() {
       <div className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 flex gap-6 overflow-hidden h-[calc(100vh-64px)]">
         
         {/* Left/Chat Column */}
-        <div className="flex-1 bg-white rounded-3xl border border-gray-100 flex flex-col overflow-hidden shadow-sm relative">
+        <div className="flex-1 glass rounded-3xl flex flex-col overflow-hidden shadow-glass relative">
           
           {/* Top Info Bar */}
           <div className="px-6 py-3 border-b border-gray-100 flex justify-between items-center bg-white z-10">
@@ -399,7 +399,7 @@ export default function ChatPage() {
         </div>
 
         {/* Right Preferences Sidebar */}
-        <div className="hidden lg:block w-80 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm overflow-y-auto">
+        <div className="hidden lg:block w-80 glass rounded-3xl p-6 shadow-glass overflow-y-auto">
           <div className="flex items-center gap-2.5 mb-5 pb-3 border-b border-gray-100">
             <Sliders size={18} className="text-green-600" />
             <h3 className="font-bold text-gray-900 text-base">Shopping Assistant Filter</h3>

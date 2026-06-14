@@ -189,7 +189,7 @@ export default function OrdersPage() {
   const totalSpent = orders.filter((o) => o.payment_status === 'paid').reduce((s, o) => s + o.total_amount + o.delivery_charge, 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header />
       <div className="max-w-3xl mx-auto px-4 py-8">
         {/* Page header */}

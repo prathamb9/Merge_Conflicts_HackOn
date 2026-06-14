@@ -94,7 +94,7 @@ export default function MealPlannerPage() {
   const listTotal = shoppingList.reduce((s, it) => s + it.price * (it.quantity || 1), 0)
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header />
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header */}

@@ -180,7 +180,7 @@ export default function PaymentPage() {
   const grandTotal = order ? order.total_amount + order.delivery_charge : 0
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header />
       <div className="max-w-2xl mx-auto px-4 py-8">
         <button onClick={() => navigate('/chat')} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4 font-medium">
