@@ -71,3 +71,5 @@ chroma_db/
 tmp/
 temp/
 
+# Zip files
+*.zip
